@@ -1,0 +1,23 @@
+node_modules/
+frontend/node_modules/
+frontend/.next/
+.venv/
+backend/.venv/
+__pycache__/
+*.pyc
+*.csv
+*.xlsx
+*.log
+*.sqlite
+*.db
+.DS_Store
+.env
+.env.local
+uploads/
+temp/
+bin/
+obj/
+
+# Generated documents — never commit client files
+/data/
+backend/app/output/
