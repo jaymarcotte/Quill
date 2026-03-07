@@ -5,12 +5,12 @@ import os
 
 class Settings(BaseSettings):
     # App
-    app_name: str = "Hillary Legal Automation"
+    app_name: str = "Quill"
     secret_key: str = "dev-secret-change-in-production"
     debug: bool = True
 
     # Database
-    database_url: str = "postgresql+psycopg://hillary:hillary_dev@localhost:5433/hillary"
+    database_url: str = "postgresql+psycopg://quill:quill_dev@localhost:5433/quill"
 
     # Clio OAuth
     clio_client_id: str = ""

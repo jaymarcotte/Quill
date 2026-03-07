@@ -7,7 +7,7 @@ import { QueryProvider } from "@/components/providers/query-provider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Hillary Gagnon — Estate Planning",
+  title: "Quill — Estate Planning",
   description: "Legal document automation",
 };
 

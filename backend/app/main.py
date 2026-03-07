@@ -19,8 +19,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Hillary Legal Automation",
-    version="2.0.0",
+    title="Quill",
+    version="1.0.0",
     lifespan=lifespan,
 )
 
@@ -43,4 +43,4 @@ app.include_router(documents.router, prefix="/api")
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "app": "Hillary Legal Automation v2"}
+    return {"status": "ok", "app": "Quill v1"}
