@@ -39,9 +39,20 @@ export default function DocumentsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  function downloadUrl(id: number, type: "docx" | "pdf") {
+  async function handleDownload(id: number, type: "docx" | "pdf", matterLabel: string) {
     const token = localStorage.getItem("access_token");
-    return `http://localhost:8001/api/documents/${id}/download/${type}?token=${token}`;
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8001";
+    const res = await fetch(`${apiUrl}/api/documents/${id}/download/${type}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${matterLabel}.${type}`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -99,19 +110,19 @@ export default function DocumentsPage() {
                   </td>
                   <td className="px-5 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <a
-                        href={downloadUrl(job.id, "docx")}
+                      <button
+                        onClick={() => handleDownload(job.id, "docx", job.matter_label)}
                         className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 border border-slate-200 rounded px-2 py-1 hover:bg-slate-50"
                       >
                         <Download className="h-3 w-3" /> DOCX
-                      </a>
+                      </button>
                       {job.has_pdf && (
-                        <a
-                          href={downloadUrl(job.id, "pdf")}
+                        <button
+                          onClick={() => handleDownload(job.id, "pdf", job.matter_label)}
                           className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 border border-slate-200 rounded px-2 py-1 hover:bg-slate-50"
                         >
                           <Download className="h-3 w-3" /> PDF
-                        </a>
+                        </button>
                       )}
                     </div>
                   </td>

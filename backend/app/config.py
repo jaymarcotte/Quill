@@ -12,10 +12,14 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+psycopg://quill:quill_dev@localhost:5433/quill"
 
+    # Frontend URL — used for post-OAuth redirects back to the UI
+    # Dev: http://127.0.0.1:5174  |  Prod: https://yourdomain.com
+    frontend_url: str = "http://127.0.0.1:5174"
+
     # Clio OAuth
     clio_client_id: str = ""
     clio_client_secret: str = ""
-    clio_redirect_uri: str = "http://localhost:8001/api/auth/clio/callback"
+    clio_redirect_uri: str = "http://127.0.0.1:8001/api/auth/clio/callback"
     clio_auth_url: str = "https://app.clio.com/oauth/authorize"
     clio_token_url: str = "https://app.clio.com/oauth/token"
     clio_api_base: str = "https://app.clio.com/api/v4"

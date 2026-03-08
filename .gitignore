@@ -21,3 +21,4 @@ obj/
 # Generated documents — never commit client files
 /data/
 backend/app/output/
+certs/

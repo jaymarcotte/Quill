@@ -36,7 +36,8 @@ export default function SettingsPage() {
     // The connect endpoint requires a JWT — pass it as a query param
     // The backend /clio/connect endpoint reads it from ?token= for browser redirects
     const token = localStorage.getItem("access_token");
-    window.location.href = `http://localhost:8001/api/auth/clio/connect?token=${token}`;
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
+    window.location.href = `${apiUrl}/api/auth/clio/connect?token=${token}`;
   }
 
   if (loading) return <div className="p-8 text-sm text-slate-500">Loading...</div>;

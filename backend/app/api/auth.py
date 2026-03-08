@@ -159,27 +159,26 @@ async def me(current_user: User = Depends(get_current_user)):
 
 @router.get("/clio/connect")
 async def clio_connect(
+    token: str,
     db: Session = Depends(get_db),
-    token: str | None = None,
-    current_user: User | None = Depends(lambda: None),
 ):
     """Redirect user to Clio OAuth authorization page.
-    Accepts JWT via ?token= query param (browser redirect) or Authorization header.
+    Accepts JWT via ?token= query param (browser-initiated OAuth flow).
     """
     from urllib.parse import urlencode
 
-    # Resolve user from ?token= query param (browser-initiated OAuth flow)
-    user = None
-    if token:
-        try:
-            payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
-            user_id = int(payload.get("sub", 0))
-            user = db.get(User, user_id)
-        except (JWTError, ValueError):
-            pass
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+    )
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+        user_id = int(payload.get("sub", 0))
+    except (JWTError, ValueError):
+        raise credentials_exception
 
+    user = db.get(User, user_id)
     if not user or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        raise credentials_exception
 
     params = {
         "response_type": "code",
@@ -226,4 +225,4 @@ async def clio_callback(
     db.commit()
 
     # Redirect to frontend
-    return RedirectResponse(url="http://localhost:5174/settings?clio=connected")
+    return RedirectResponse(url=f"{settings.frontend_url}/settings?clio=connected")

@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { getMatter, searchContacts, generateDocument } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,28 @@ import { ChevronLeft, ChevronRight, FileDown, Loader2, Check } from "lucide-reac
 import { ContactSearch } from "@/components/wizard/contact-search";
 import { cn } from "@/lib/utils";
 
+function resolveDocumentType(
+  key: string,
+  structure: "single" | "joint",
+  is_female: boolean
+): string | null {
+  const gender = is_female ? "female" : "male";
+  // living_will uses "married" for joint; other docs fall back to single templates
+  const lwStructure = structure === "joint" ? "married" : "single";
+  const singleOrJoint = "single"; // only single templates exist for other doc types
+  const map: Record<string, string> = {
+    living_will: `living_will_${lwStructure}_${gender}`,
+    hc_poa: `hc_poa_${singleOrJoint}_${gender}`,
+    general_poa: `general_poa_${singleOrJoint}_${gender}`,
+    pourover_will: `pourover_will_${singleOrJoint}_${gender}`,
+    trust: `trust_${singleOrJoint}`,
+    certificate_of_trust: `certificate_of_trust_${singleOrJoint}`,
+    engagement_letter: "engagement_letter",
+    closing_letter: `closing_letter_${singleOrJoint}`,
+  };
+  return map[key] ?? null;
+}
+
 // Step definitions
 const STEPS = ["Setup", "Documents", "Living Will", "Review"];
 
@@ -20,6 +42,7 @@ type WizardData = {
   client: { id: number; name: string; first_name: string; last_name: string; prefix: string } | null;
   client_2: { id: number; name: string } | null;
   is_female: boolean;
+  include_pregnancy_clause: boolean;
   trust_name: string;
   selected_documents: string[];
   // Living Will specific
@@ -46,6 +69,7 @@ export default function WizardPage() {
     client: null,
     client_2: null,
     is_female: false,
+    include_pregnancy_clause: false,
     trust_name: "",
     selected_documents: [],
     living_will_client: "client_1",
@@ -56,22 +80,7 @@ export default function WizardPage() {
     queryFn: () => getMatter(Number(matterId)).then((r) => r.data.data),
   });
 
-  const generateMutation = useMutation({
-    mutationFn: generateDocument,
-    onSuccess: (res) => {
-      toast.success("Document generated!", {
-        description: `Job #${res.data.job_id} ready to download.`,
-        action: {
-          label: "Download DOCX",
-          onClick: () => window.open(
-            `${process.env.NEXT_PUBLIC_API_URL}/api/documents/${res.data.job_id}/download/docx`,
-            "_blank"
-          ),
-        },
-      });
-    },
-    onError: () => toast.error("Generation failed. Check the backend logs."),
-  });
+  const [isGenerating, setIsGenerating] = useState(false);
 
   function update<K extends keyof WizardData>(key: K, value: WizardData[K]) {
     setData((prev) => ({ ...prev, [key]: value }));
@@ -86,32 +95,76 @@ export default function WizardPage() {
     }));
   }
 
-  function handleGenerate() {
+  async function handleGenerate() {
     if (!matter || !data.client) return;
+    if (data.selected_documents.length === 0) {
+      toast.error("No documents selected.");
+      return;
+    }
 
-    // Determine document type from selections + client gender/structure
-    const isFemale = data.is_female;
-    const documentType = `living_will_single_${isFemale ? "female" : "male"}`;
-
+    setIsGenerating(true);
     const matterLabel = `${matter.display_number} - ${matter.description}`;
 
-    generateMutation.mutate({
-      matter_id: matter.id,
-      matter_label: matterLabel,
-      document_type: documentType,
-      wizard_data: {
-        client: {
-          name: data.client.name,
-          first_name: data.client.first_name,
-          last_name: data.client.last_name,
-          prefix: data.client.prefix,
-        },
-        is_female: isFemale,
-        trust_name: data.trust_name,
-      },
-      generate_pdf: true,
-      upload_to_clio: false,
+    const requests = data.selected_documents
+      .map((key) => {
+        const docType = resolveDocumentType(key, data.structure, data.is_female);
+        if (!docType) return null;
+        return {
+          key,
+          docType,
+          payload: {
+            matter_id: matter.id,
+            matter_label: matterLabel,
+            document_type: docType,
+            wizard_data: {
+              client: {
+                name: data.client!.name,
+                first_name: data.client!.first_name,
+                last_name: data.client!.last_name,
+                prefix: data.client!.prefix,
+              },
+              is_female: data.is_female,
+              include_pregnancy_clause: data.include_pregnancy_clause,
+              trust_name: data.trust_name,
+              selected_documents: data.selected_documents,
+            },
+            generate_pdf: true,
+            upload_to_clio: false,
+          },
+        };
+      })
+      .filter(Boolean) as { key: string; docType: string; payload: Parameters<typeof generateDocument>[0] }[];
+
+    const results = await Promise.allSettled(
+      requests.map((r) => generateDocument(r.payload))
+    );
+
+    let successCount = 0;
+    results.forEach((result, idx) => {
+      const label = DOCUMENT_OPTIONS.find((d) => d.key === requests[idx].key)?.label ?? requests[idx].docType;
+      if (result.status === "fulfilled") {
+        successCount++;
+        toast.success(`${label} generated`, {
+          description: `Job #${result.value.data.job_id} ready.`,
+          action: {
+            label: "Go to Documents",
+            onClick: () => router.push("/documents"),
+          },
+        });
+      } else {
+        toast.error(`${label} failed`, {
+          description: "Check the backend logs.",
+        });
+      }
     });
+
+    setIsGenerating(false);
+
+    if (successCount > 0) {
+      toast.success(`${successCount} of ${requests.length} documents generated.`, {
+        action: { label: "View Documents", onClick: () => router.push("/documents") },
+      });
+    }
   }
 
   if (matterLoading) {
@@ -176,7 +229,7 @@ export default function WizardPage() {
           <StepLivingWill data={data} update={update} />
         )}
         {step === 3 && (
-          <StepReview data={data} matter={matter} onGenerate={handleGenerate} isGenerating={generateMutation.isPending} />
+          <StepReview data={data} matter={matter} onGenerate={handleGenerate} isGenerating={isGenerating} />
         )}
       </div>
 
@@ -194,8 +247,8 @@ export default function WizardPage() {
             Next <ChevronRight className="h-4 w-4 ml-1" />
           </Button>
         ) : (
-          <Button onClick={handleGenerate} disabled={generateMutation.isPending}>
-            {generateMutation.isPending ? (
+          <Button onClick={handleGenerate} disabled={isGenerating}>
+            {isGenerating ? (
               <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Generating...</>
             ) : (
               <><FileDown className="h-4 w-4 mr-2" /> Generate Documents</>
@@ -247,22 +300,56 @@ function StepSetup({ data, update }: { data: WizardData; update: Function }) {
           <div>
             <Label className="text-sm mb-2 block">Pronouns</Label>
             <div className="flex gap-2">
-              {[{ label: "She/Her", female: true }, { label: "He/Him", female: false }, { label: "They/Them", female: false }].map(({ label, female }) => (
-                <button
-                  key={label}
-                  onClick={() => update("is_female", female)}
-                  className={cn(
-                    "px-4 py-1.5 rounded-full border text-sm transition-colors",
-                    data.is_female === female && label !== "They/Them"
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 text-slate-600 hover:border-slate-400"
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
+              {[
+                { label: "She/Her", value: "she" },
+                { label: "He/Him", value: "he" },
+                { label: "They/Them", value: "they" },
+              ].map(({ label, value }) => {
+                const isActive =
+                  (value === "she" && data.is_female) ||
+                  (value === "he" && !data.is_female);
+                return (
+                  <button
+                    key={label}
+                    onClick={() => {
+                      update("is_female", value === "she");
+                      if (value !== "she") update("include_pregnancy_clause", false);
+                    }}
+                    className={cn(
+                      "px-4 py-1.5 rounded-full border text-sm transition-colors",
+                      isActive
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 text-slate-600 hover:border-slate-400"
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
           </div>
+
+          {data.is_female && (
+            <div>
+              <Label className="text-sm mb-2 block">Include pregnancy clause in Living Will?</Label>
+              <div className="flex gap-2">
+                {([true, false] as const).map((val) => (
+                  <button
+                    key={String(val)}
+                    onClick={() => update("include_pregnancy_clause", val)}
+                    className={cn(
+                      "px-5 py-1.5 rounded-full border text-sm transition-colors",
+                      data.include_pregnancy_clause === val
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 text-slate-600 hover:border-slate-400"
+                    )}
+                  >
+                    {val ? "Yes" : "No"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {data.structure === "joint" && (
             <div>
@@ -342,8 +429,8 @@ function StepLivingWill({ data, update }: { data: WizardData; update: Function }
         </div>
         <div className="flex justify-between">
           <span className="text-slate-500">Pregnancy clause</span>
-          <Badge variant={data.is_female ? "default" : "secondary"}>
-            {data.is_female ? "Included" : "Not applicable"}
+          <Badge variant={data.include_pregnancy_clause ? "default" : "secondary"}>
+            {data.include_pregnancy_clause ? "Included" : data.is_female ? "Not included" : "Not applicable"}
           </Badge>
         </div>
         <div className="flex justify-between">

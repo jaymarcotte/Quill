@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8001";
 
 export const api = axios.create({
   baseURL: `${API_URL}/api`,
@@ -48,6 +48,30 @@ export const getContact = (id: number) => api.get(`/contacts/${id}`);
 export const getDocumentTypes = () => api.get<{ data: string[] }>("/documents/types");
 export const generateDocument = (req: GenerateRequest) => api.post("/documents/generate", req);
 export const listJobs = () => api.get("/documents");
+
+// --- Templates ---
+export const listTemplates = () => api.get("/templates");
+export const downloadTemplate = async (key: string, filename: string) => {
+  const token = localStorage.getItem("access_token");
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8001";
+  const res = await fetch(`${apiUrl}/api/templates/${key}/download`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+export const uploadTemplate = (key: string, file: File) => {
+  const form = new FormData();
+  form.append("file", file);
+  return api.post(`/templates/${key}/upload`, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
 
 // --- Types ---
 export interface Matter {
