@@ -34,6 +34,22 @@ type WizardData = {
   is_female: boolean;
   include_pregnancy_clause: boolean;
   trust_name: string;
+  trustee_1: string;
+  trustee_2: string;
+  trustee_structure: "sequential" | "co_trustees";
+  hc_agent_1: string;
+  hc_agent_2: string;
+  hc_agent_structure: "single" | "co_agents" | "primary_successor";
+  poa_agent_1a: string;
+  poa_agent_1b: string;
+  poa_andor: string;
+  poa_agent_2: string;
+  poa_agent_3: string;
+  poa_has_co_agents: boolean;
+  has_brokerage: boolean;
+  has_llc: boolean;
+  has_special_warranty_deed: boolean;
+  other_account_name: string;
   selected_documents: string[];
   rate_key: string;
 };
@@ -46,12 +62,22 @@ const RATE_TYPE_DESCRIPTIONS: Record<string, string> = {
   hourly: "an hourly basis at the rate of {amount} per hour",
 };
 
-// Derive wizard steps dynamically — Trust step only if trust is selected
+// Steps appear in this fixed order when the corresponding document is selected.
+// Each entry: [step_name, wizard_key_that_triggers_it]
+const DOCUMENT_STEPS: [string, string][] = [
+  ["Engagement Letter", "engagement_letter"],
+  ["Trust",            "trust"],
+  ["Health Care POA",  "hc_poa"],
+  ["General POA",      "general_poa"],
+  ["Living Will",      "living_will"],
+  ["Closing Letter",   "closing_letter"],
+];
+
 function getSteps(selectedDocs: string[]): string[] {
   const steps = ["Setup", "Documents"];
-  if (selectedDocs.includes("trust")) steps.push("Trust");
-  if (selectedDocs.includes("living_will")) steps.push("Living Will");
-  if (selectedDocs.includes("engagement_letter")) steps.splice(steps.indexOf("Review") === -1 ? steps.length : steps.indexOf("Review"), 0, "Fee");
+  for (const [stepName, key] of DOCUMENT_STEPS) {
+    if (selectedDocs.includes(key)) steps.push(stepName);
+  }
   steps.push("Review");
   return steps;
 }
@@ -67,6 +93,22 @@ export default function WizardPage() {
     is_female: false,
     include_pregnancy_clause: false,
     trust_name: "",
+    trustee_1: "",
+    trustee_2: "",
+    trustee_structure: "sequential",
+    hc_agent_1: "",
+    hc_agent_2: "",
+    hc_agent_structure: "single",
+    poa_agent_1a: "",
+    poa_agent_1b: "",
+    poa_andor: "and/or",
+    poa_agent_2: "",
+    poa_agent_3: "",
+    poa_has_co_agents: false,
+    has_brokerage: false,
+    has_llc: false,
+    has_special_warranty_deed: false,
+    other_account_name: "",
     selected_documents: [],
     rate_key: "",
   });
@@ -145,6 +187,22 @@ async function handleGenerate() {
       is_female: data.is_female,
       include_pregnancy_clause: data.include_pregnancy_clause,
       trust_name: data.trust_name,
+      trustee_1: data.trustee_1,
+      trustee_2: data.trustee_2,
+      trustee_structure: data.trustee_structure,
+      hc_agent_1: data.hc_agent_1,
+      hc_agent_2: data.hc_agent_2,
+      hc_agent_structure: data.hc_agent_structure,
+      poa_agent_1a: data.poa_agent_1a,
+      poa_agent_1b: data.poa_agent_1b,
+      poa_andor: data.poa_andor,
+      poa_agent_2: data.poa_agent_2,
+      poa_agent_3: data.poa_agent_3,
+      poa_has_co_agents: data.poa_has_co_agents,
+      has_brokerage: data.has_brokerage,
+      has_llc: data.has_llc,
+      has_special_warranty_deed: data.has_special_warranty_deed,
+      other_account_name: data.other_account_name,
       selected_documents: data.selected_documents,
       rate_key: data.rate_key,
       attorney_rate: data.rate_key && firmRates ? (firmRates[data.rate_key] ?? "") : "",
@@ -243,14 +301,23 @@ async function handleGenerate() {
         {currentStepName === "Documents" && (
           <StepDocuments data={data} docTypes={docTypes ?? []} toggle={toggleDocument} toggleAll={toggleAll} />
         )}
+        {currentStepName === "Engagement Letter" && (
+          <StepEngagementLetter data={data} update={update} firmRates={firmRates} />
+        )}
         {currentStepName === "Trust" && (
           <StepTrust data={data} update={update} />
+        )}
+        {currentStepName === "Health Care POA" && (
+          <StepHcPoa data={data} update={update} />
+        )}
+        {currentStepName === "General POA" && (
+          <StepGeneralPoa data={data} update={update} />
         )}
         {currentStepName === "Living Will" && (
           <StepLivingWill data={data} />
         )}
-        {currentStepName === "Fee" && (
-          <StepFee data={data} update={update} firmRates={firmRates} />
+        {currentStepName === "Closing Letter" && (
+          <StepClosingLetter data={data} update={update} />
         )}
         {currentStepName === "Review" && (
           <StepReview data={data} matter={matter} docTypes={docTypes ?? []} onGenerate={handleGenerate} isGenerating={isGenerating} />
@@ -545,9 +612,9 @@ function ReviewRow({ label, value, warn }: { label: string; value: string; warn?
 }
 
 
-// --- Fee Step ---
+// --- Engagement Letter Step ---
 
-function StepFee({
+function StepEngagementLetter({
   data,
   update,
   firmRates,
@@ -567,8 +634,8 @@ function StepFee({
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-medium text-slate-900 mb-1">Fee Agreement</h2>
-        <p className="text-sm text-slate-500">Select the fee structure for this engagement letter.</p>
+        <h2 className="text-lg font-medium text-slate-900 mb-1">Engagement Letter</h2>
+        <p className="text-sm text-slate-500">Select the fee structure for this engagement.</p>
       </div>
       <div className="space-y-2">
         {rateTypes.map((rt) => {
@@ -599,6 +666,167 @@ function StepFee({
           <code className="bg-slate-100 px-1 rounded">{"{{ attorney_rate }}"}</code> ={" "}
           {firmRates[data.rate_key] || "—"}
         </p>
+      )}
+    </div>
+  );
+}
+
+
+// --- Health Care POA Step ---
+
+function StepHcPoa({ data, update }: { data: WizardData; update: Function }) {
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-medium text-slate-900 mb-1">Health Care POA</h2>
+        <p className="text-sm text-slate-500">Enter the healthcare agent(s) for this document.</p>
+      </div>
+
+      <div>
+        <Label className="text-sm mb-2 block">Agent Structure</Label>
+        <div className="flex gap-2 flex-wrap">
+          {[
+            { value: "single", label: "Single Agent" },
+            { value: "primary_successor", label: "Primary + Successor" },
+            { value: "co_agents", label: "Co-Agents" },
+          ].map(({ value, label }) => (
+            <button key={value} onClick={() => update("hc_agent_structure", value)}
+              className={cn("px-4 py-1.5 rounded-full border text-sm transition-colors",
+                data.hc_agent_structure === value
+                  ? "border-slate-900 bg-slate-900 text-white"
+                  : "border-slate-200 text-slate-600 hover:border-slate-400")}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <Label className="text-sm mb-1.5 block">
+          {data.hc_agent_structure === "co_agents" ? "Co-Agent 1" : "Primary Agent"}
+        </Label>
+        <Input placeholder="Full name" value={data.hc_agent_1}
+          onChange={(e) => update("hc_agent_1", e.target.value)} />
+      </div>
+
+      {data.hc_agent_structure !== "single" && (
+        <div>
+          <Label className="text-sm mb-1.5 block">
+            {data.hc_agent_structure === "co_agents" ? "Co-Agent 2" : "Successor Agent"}
+          </Label>
+          <Input placeholder="Full name" value={data.hc_agent_2}
+            onChange={(e) => update("hc_agent_2", e.target.value)} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// --- General POA Step ---
+
+function StepGeneralPoa({ data, update }: { data: WizardData; update: Function }) {
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-medium text-slate-900 mb-1">General Financial POA</h2>
+        <p className="text-sm text-slate-500">Enter the financial power of attorney agent(s).</p>
+      </div>
+
+      <div>
+        <Label className="text-sm mb-1.5 block">Primary Agent (1a)</Label>
+        <Input placeholder="Full name" value={data.poa_agent_1a}
+          onChange={(e) => update("poa_agent_1a", e.target.value)} />
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button onClick={() => { update("poa_has_co_agents", !data.poa_has_co_agents); }}
+          className={cn("w-9 h-5 rounded-full transition-colors shrink-0",
+            data.poa_has_co_agents ? "bg-slate-900" : "bg-slate-200")}>
+          <span className={cn("block w-4 h-4 rounded-full bg-white shadow transition-transform mx-0.5",
+            data.poa_has_co_agents ? "translate-x-4" : "translate-x-0")} />
+        </button>
+        <Label className="text-sm cursor-pointer" onClick={() => update("poa_has_co_agents", !data.poa_has_co_agents)}>
+          Add co-agent (joint authority)
+        </Label>
+      </div>
+
+      {data.poa_has_co_agents && (
+        <>
+          <div>
+            <Label className="text-sm mb-1.5 block">Co-Agent (1b)</Label>
+            <Input placeholder="Full name" value={data.poa_agent_1b}
+              onChange={(e) => update("poa_agent_1b", e.target.value)} />
+          </div>
+          <div>
+            <Label className="text-sm mb-2 block">Joint Authority Language</Label>
+            <div className="flex gap-2">
+              {["and", "or", "and/or"].map((v) => (
+                <button key={v} onClick={() => update("poa_andor", v)}
+                  className={cn("px-4 py-1.5 rounded-full border text-sm transition-colors",
+                    data.poa_andor === v
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 text-slate-600 hover:border-slate-400")}>
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      <div>
+        <Label className="text-sm mb-1.5 block">Successor Agent (2)</Label>
+        <Input placeholder="Full name (optional)" value={data.poa_agent_2}
+          onChange={(e) => update("poa_agent_2", e.target.value)} />
+      </div>
+
+      <div>
+        <Label className="text-sm mb-1.5 block">2nd Successor Agent (3)</Label>
+        <Input placeholder="Full name (optional)" value={data.poa_agent_3}
+          onChange={(e) => update("poa_agent_3", e.target.value)} />
+      </div>
+    </div>
+  );
+}
+
+
+// --- Closing Letter Step ---
+
+function StepClosingLetter({ data, update }: { data: WizardData; update: Function }) {
+  const toggles: { key: keyof WizardData; label: string }[] = [
+    { key: "has_brokerage", label: "Client has brokerage / investment account" },
+    { key: "has_llc", label: "Client has an LLC" },
+    { key: "has_special_warranty_deed", label: "Special Warranty Deed included" },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-medium text-slate-900 mb-1">Closing Letter</h2>
+        <p className="text-sm text-slate-500">Select which optional sections to include.</p>
+      </div>
+
+      <div className="space-y-3">
+        {toggles.map(({ key, label }) => (
+          <div key={key} className="flex items-center gap-3">
+            <button onClick={() => update(key, !data[key])}
+              className={cn("w-9 h-5 rounded-full transition-colors shrink-0",
+                data[key] ? "bg-slate-900" : "bg-slate-200")}>
+              <span className={cn("block w-4 h-4 rounded-full bg-white shadow transition-transform mx-0.5",
+                data[key] ? "translate-x-4" : "translate-x-0")} />
+            </button>
+            <Label className="text-sm cursor-pointer" onClick={() => update(key, !data[key])}>{label}</Label>
+          </div>
+        ))}
+      </div>
+
+      {data.has_brokerage && (
+        <div className="mt-1">
+          <Label className="text-sm mb-1.5 block">Other account name (optional)</Label>
+          <Input placeholder="e.g. Fidelity IRA" value={data.other_account_name}
+            onChange={(e) => update("other_account_name", e.target.value)} />
+        </div>
       )}
     </div>
   );

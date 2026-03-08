@@ -78,11 +78,11 @@ Work through these in sequence. Check off each when complete and update README b
 - [ ] **NEXT: Clio auto-populate** — read `custom_field_values` already on the matter and fill wizard state automatically (trust_name, structure, is_female, document checkboxes, agents, trustees)
 - [ ] Matter-type-first wizard entry — select Estate Planning / Probate / etc. before Setup
 - [ ] Expanded pronoun model — She/Her, He/Him, They/Them, and how they affect template grammar
-- [ ] Wizard: HC POA step — inputs for hc_agent_1, hc_agent_2, hc_agent_structure
-- [ ] Wizard: General POA step — inputs for poa_agent_1a, poa_agent_1b, poa_andor, poa_agent_2, poa_agent_3
+- [x] Wizard: HC POA step — inputs for hc_agent_1, hc_agent_2, hc_agent_structure
+- [x] Wizard: General POA step — inputs for poa_agent_1a, poa_agent_1b, poa_andor, poa_agent_2, poa_agent_3
+- [x] Wizard: Closing Letter step — has_brokerage, has_llc, has_special_warranty_deed, other_account_name
 - [ ] Wizard: Trust trustees step — trustee_1, trustee_2, trustee_structure, trustee_2a/2b
 - [ ] Wizard: Trust beneficiaries step — child_1/2/3, beneficiaries list
-- [ ] Wizard: Closing Letter step — has_brokerage, has_llc, has_special_warranty_deed, other_account_name
 - [ ] Contact-role assignment — assign matter contacts to per-document roles (trustee, agent, beneficiary, spouse, child)
 - [ ] Upload-to-Clio toggle in Review step (already in backend, just needs UI)
 
