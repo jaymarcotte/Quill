@@ -86,7 +86,17 @@ const DOCUMENT_STEPS: [string, string][] = [
   ["Closing Letter",   "closing_letter"],
 ];
 
-function getSteps(selectedDocs: string[]): string[] {
+function getSteps(matterType: string, selectedDocs: string[]): string[] {
+  if (matterType === "probate") {
+    return ["Matter Type", "Probate Setup", "Review"];
+  }
+  if (matterType === "guardianship_conservatorship") {
+    return ["Matter Type", "Guardianship Setup", "Review"];
+  }
+  if (matterType === "trust_administration") {
+    return ["Matter Type", "Trust Admin Setup", "Review"];
+  }
+  // Default: Estate Planning (or not yet selected)
   const steps = ["Matter Type", "Setup", "Documents"];
   for (const [stepName, key] of DOCUMENT_STEPS) {
     if (selectedDocs.includes(key)) steps.push(stepName);
@@ -231,7 +241,7 @@ export default function WizardPage() {
     }
   }, [matter]);
 
-  const steps = getSteps(data.selected_documents);
+  const steps = getSteps(data.matter_type, data.selected_documents);
 
   function update<K extends keyof WizardData>(key: K, value: WizardData[K]) {
     setData((prev) => ({ ...prev, [key]: value }));
@@ -397,6 +407,15 @@ async function handleGenerate() {
         {currentStepName === "Setup" && (
           <StepSetup data={data} update={update} matterId={Number(matterId)} />
         )}
+        {currentStepName === "Probate Setup" && (
+          <StepComingSoon title="Probate" description="The Probate workflow is coming in a future phase. Document generation for probate matters will be available once templates and required fields are defined." />
+        )}
+        {currentStepName === "Guardianship Setup" && (
+          <StepComingSoon title="Guardianship / Conservatorship" description="The Guardianship and Conservatorship workflow is coming in a future phase." />
+        )}
+        {currentStepName === "Trust Admin Setup" && (
+          <StepComingSoon title="Trust Administration" description="The Trust Administration workflow is coming in a future phase." />
+        )}
         {currentStepName === "Documents" && (
           <StepDocuments data={data} docTypes={docTypes ?? []} toggle={toggleDocument} toggleAll={toggleAll} />
         )}
@@ -432,15 +451,37 @@ async function handleGenerate() {
           <Button onClick={() => setStep((s) => s + 1)}>
             Next <ChevronRight className="h-4 w-4 ml-1" />
           </Button>
-        ) : (
+        ) : data.matter_type === "estate_planning" || data.matter_type === "" ? (
           <Button onClick={handleGenerate} disabled={isGenerating}>
             {isGenerating
               ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Generating...</>
               : <><FileDown className="h-4 w-4 mr-2" /> Generate Documents</>
             }
           </Button>
+        ) : (
+          <Button variant="outline" onClick={() => router.push("/matters")}>
+            Done — Return to Matters
+          </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+
+// --- Coming Soon placeholder ---
+
+function StepComingSoon({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="py-6 text-center space-y-3">
+      <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-slate-100 mb-2">
+        <FileDown className="h-5 w-5 text-slate-400" />
+      </div>
+      <h2 className="text-lg font-medium text-slate-900">{title}</h2>
+      <p className="text-sm text-slate-500 max-w-sm mx-auto">{description}</p>
+      <p className="text-xs text-slate-400">
+        This section is reserved for Phase 2. Continue to Review to note the matter type.
+      </p>
     </div>
   );
 }
@@ -791,39 +832,50 @@ function StepReview({
           }
         </ReviewSection>
 
-        <ReviewSection title="Setup">
-          {data.client
-            ? <ReviewRow label="Primary Client" value={data.client.name} />
-            : <ReviewRow label="Primary Client" value="Not selected" warn />
-          }
-          <ReviewRow label="Structure" value={data.structure === "single" ? "Single" : "Joint"} />
-          <ReviewRow label="Pronouns" value={data.is_female ? "She/Her" : "He/Him"} />
-          {data.trust_name && <ReviewRow label="Trust Name" value={data.trust_name} />}
-          {data.rate_key && (
-            <ReviewRow label="Fee Structure" value={rateLabel(data.rate_key)} />
-          )}
-        </ReviewSection>
+        {data.matter_type !== "estate_planning" && data.matter_type !== "" ? (
+          <div className="rounded-lg border border-slate-200 px-4 py-4 text-sm text-slate-500 text-center">
+            Full document workflow for{" "}
+            <span className="font-medium text-slate-700">
+              {MATTER_TYPES.find((t) => t.key === data.matter_type)?.label ?? data.matter_type}
+            </span>{" "}
+            is coming in a future phase. This matter type has been noted.
+          </div>
+        ) : (
+          <>
+            <ReviewSection title="Setup">
+              {data.client
+                ? <ReviewRow label="Primary Client" value={data.client.name} />
+                : <ReviewRow label="Primary Client" value="Not selected" warn />
+              }
+              <ReviewRow label="Structure" value={data.structure === "single" ? "Single" : "Joint"} />
+              <ReviewRow label="Pronouns" value={data.is_female ? "She/Her" : "He/Him"} />
+              {data.trust_name && <ReviewRow label="Trust Name" value={data.trust_name} />}
+              {data.rate_key && (
+                <ReviewRow label="Fee Structure" value={rateLabel(data.rate_key)} />
+              )}
+            </ReviewSection>
 
-        <ReviewSection title="Selected Documents">
-          {data.selected_documents.length === 0 ? (
-            <p className="text-sm text-red-400 italic px-4 py-3">No documents selected</p>
-          ) : (
-            data.selected_documents.map((key) => {
-              const doc = docTypes.find((d) => d.wizard_key === key);
-              const hasTemplate = doc?.has_template;
-              return (
-                <div key={key} className="flex justify-between px-4 py-2.5 text-sm">
-                  <span className="font-medium text-slate-900">{doc?.label ?? key}</span>
+            <ReviewSection title="Selected Documents">
+              {data.selected_documents.length === 0 ? (
+                <p className="text-sm text-red-400 italic px-4 py-3">No documents selected</p>
+              ) : (
+                data.selected_documents.map((key) => {
+                  const doc = docTypes.find((d) => d.wizard_key === key);
+                  const hasTemplate = doc?.has_template;
+                  return (
+                    <div key={key} className="flex justify-between px-4 py-2.5 text-sm">
+                      <span className="font-medium text-slate-900">{doc?.label ?? key}</span>
                   {!hasTemplate && (
                     <span className="text-xs text-orange-500">No template — will skip</span>
                   )}
                 </div>
               );
             })
-          )}
-        </ReviewSection>
+                )}
+              </ReviewSection>
+          </>
+        )}
       </div>
-
     </div>
   );
 }
