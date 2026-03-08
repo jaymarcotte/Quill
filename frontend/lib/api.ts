@@ -41,13 +41,48 @@ export const getMatterRelationships = (id: number) => api.get(`/matters/${id}/re
 
 // --- Contacts ---
 export const searchContacts = (q: string) =>
-  api.get<{ id: number; text: string }[]>(`/contacts/search?q=${encodeURIComponent(q)}`);
-export const getContact = (id: number) => api.get(`/contacts/${id}`);
+  api.get<ContactCard[]>(`/contacts/search?q=${encodeURIComponent(q)}`);
+export const getContact = (id: number) => api.get<{ data: ContactFull }>(`/contacts/${id}`);
+export const updateContact = (id: number, data: Partial<ContactFull>) =>
+  api.patch(`/contacts/${id}`, data);
+export const createContact = (data: { first_name: string; last_name?: string; phone?: string; email?: string }) =>
+  api.post<{ data: ContactCard }>("/contacts", data);
+export const addMatterRelationship = (matterId: number, contactId: number, description?: string) =>
+  api.post(`/contacts/matter/${matterId}/relationships`, { contact_id: contactId, description });
+export const removeMatterRelationship = (matterId: number, relationshipId: number) =>
+  api.delete(`/contacts/matter/${matterId}/relationships/${relationshipId}`);
 
 // --- Documents ---
 export const getDocumentTypes = () => api.get<{ data: string[] }>("/documents/types");
 export const generateDocument = (req: GenerateRequest) => api.post("/documents/generate", req);
 export const listJobs = () => api.get("/documents");
+
+// --- Document Types (DB-driven config) ---
+export const listDocumentTypes = () => api.get<{ data: DocType[] }>("/document-types");
+export const createDocumentType = (data: Partial<DocType>) => api.post<{ data: DocType }>("/document-types", data);
+export const updateDocumentType = (id: number, data: Partial<DocType>) => api.patch<{ data: DocType }>(`/document-types/${id}`, data);
+export const deleteDocumentType = (id: number) => api.delete(`/document-types/${id}`);
+export const reorderDocumentTypes = (items: { id: number; sort_order: number }[]) =>
+  api.post("/document-types/reorder", items);
+export const uploadDocumentTypeTemplate = (id: number, variant: string, file: File) => {
+  const form = new FormData();
+  form.append("file", file);
+  return api.post(`/document-types/${id}/upload/${variant}`, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+export const downloadDocumentTypeTemplate = async (id: number, variant: string, filename: string) => {
+  const token = localStorage.getItem("access_token");
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8001";
+  const res = await fetch(`${apiUrl}/api/document-types/${id}/download/${variant}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+};
 
 // --- Templates ---
 export const listTemplates = () => api.get("/templates");
@@ -89,4 +124,46 @@ export interface GenerateRequest {
   wizard_data: Record<string, unknown>;
   generate_pdf?: boolean;
   upload_to_clio?: boolean;
+}
+
+export interface DocType {
+  id: number;
+  label: string;
+  wizard_key: string;
+  clio_field_id: number | null;
+  template_default: string | null;
+  template_single_male: string | null;
+  template_single_female: string | null;
+  template_joint_male: string | null;
+  template_joint_female: string | null;
+  sort_order: number;
+  active: boolean;
+  has_template: boolean;
+}
+
+export interface ContactCard {
+  id: number;
+  name: string;
+  first_name: string;
+  last_name: string;
+  prefix: string;
+  email: string;
+  phone: string;
+  city_state: string;
+}
+
+export interface ContactFull extends ContactCard {
+  etag: string;
+  street: string;
+  province: string;
+  postal_code: string;
+  middle_name: string;
+  pronoun: string;
+  special_notes: string;
+}
+
+export interface MatterRelationship {
+  id: number;
+  description: string;
+  contact: { id: number; name: string };
 }

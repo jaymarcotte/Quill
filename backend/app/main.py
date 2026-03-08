@@ -2,8 +2,10 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.database import engine, Base
-from app.api import auth, matters, contacts, documents, clio_fields, templates
+from app.database import engine, Base, SessionLocal
+from app.api import auth, matters, contacts, documents, clio_fields, templates, document_types
+from app.models import document_type as _dt_model  # ensure model is registered
+from app.services.seed_document_types import seed_document_types
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,6 +17,12 @@ logging.basicConfig(
 async def lifespan(app: FastAPI):
     # Create tables on startup (use Alembic for migrations in production)
     Base.metadata.create_all(bind=engine)
+    # Seed document types if table is empty
+    db = SessionLocal()
+    try:
+        seed_document_types(db)
+    finally:
+        db.close()
     yield
 
 
@@ -41,6 +49,7 @@ app.include_router(contacts.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(clio_fields.router, prefix="/api")
 app.include_router(templates.router, prefix="/api")
+app.include_router(document_types.router, prefix="/api")
 
 
 @app.get("/health")

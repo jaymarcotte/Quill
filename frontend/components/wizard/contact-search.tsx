@@ -1,30 +1,25 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { searchContacts } from "@/lib/api";
+import { searchContacts, type ContactCard } from "@/lib/api";
 import { Input } from "@/components/ui/input";
-import { Loader2, X } from "lucide-react";
+import { Loader2, X, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-interface ContactOption {
-  id: number;
-  text: string;
-}
-
 interface Props {
-  value: ContactOption | null;
-  onChange: (value: ContactOption | null) => void;
+  value: ContactCard | null;
+  onChange: (value: ContactCard | null) => void;
   placeholder?: string;
+  onCreateNew?: (query: string) => void;
 }
 
-export function ContactSearch({ value, onChange, placeholder = "Search contacts..." }: Props) {
+export function ContactSearch({ value, onChange, placeholder = "Search contacts...", onCreateNew }: Props) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<ContactOption[]>([]);
+  const [results, setResults] = useState<ContactCard[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Close on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -53,7 +48,7 @@ export function ContactSearch({ value, onChange, placeholder = "Search contacts.
     }, 250);
   }
 
-  function select(contact: ContactOption) {
+  function select(contact: ContactCard) {
     onChange(contact);
     setQuery("");
     setOpen(false);
@@ -68,8 +63,15 @@ export function ContactSearch({ value, onChange, placeholder = "Search contacts.
   if (value) {
     return (
       <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-sm">
-        <span className="flex-1 font-medium text-slate-900">{value.text}</span>
-        <button onClick={clear} className="text-slate-400 hover:text-slate-600 transition-colors">
+        <div className="flex-1 min-w-0">
+          <span className="font-medium text-slate-900">{value.name}</span>
+          {(value.email || value.phone || value.city_state) && (
+            <div className="text-xs text-slate-400 mt-0.5 truncate">
+              {[value.email, value.phone, value.city_state].filter(Boolean).join(" · ")}
+            </div>
+          )}
+        </div>
+        <button onClick={clear} className="text-slate-400 hover:text-slate-600 transition-colors shrink-0">
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -91,23 +93,34 @@ export function ContactSearch({ value, onChange, placeholder = "Search contacts.
         )}
       </div>
 
-      {open && results.length > 0 && (
+      {open && (results.length > 0 || (!loading && query.length >= 2)) && (
         <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
           {results.map((c) => (
             <button
               key={c.id}
               onClick={() => select(c)}
-              className="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+              className="w-full text-left px-4 py-2.5 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0"
             >
-              {c.text}
+              <div className="text-sm font-medium text-slate-900">{c.name}</div>
+              {(c.email || c.phone || c.city_state) && (
+                <div className="text-xs text-slate-400 mt-0.5">
+                  {[c.email, c.phone, c.city_state].filter(Boolean).join(" · ")}
+                </div>
+              )}
             </button>
           ))}
-        </div>
-      )}
-
-      {open && !loading && results.length === 0 && query.length >= 2 && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg p-4 text-sm text-slate-400 text-center">
-          No contacts found
+          {results.length === 0 && !loading && (
+            <div className="px-4 py-3 text-sm text-slate-400">No contacts found</div>
+          )}
+          {onCreateNew && (
+            <button
+              onClick={() => { setOpen(false); onCreateNew(query); }}
+              className="w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50 border-t border-slate-100 flex items-center gap-2"
+            >
+              <UserPlus className="h-4 w-4" />
+              Create new contact in Clio
+            </button>
+          )}
         </div>
       )}
     </div>
