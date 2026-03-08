@@ -109,8 +109,17 @@ SEED_DATA = [
      "category": "Closing", "applies_to": "closing_letter", "example": "true / false", "sort_order": 50},
 
     # --- Engagement ---
-    {"variable_name": "attorney_rate", "label": "Attorney Rate / Fee", "category": "Engagement",
-     "applies_to": "engagement_letter", "example": "$3,500 flat fee", "sort_order": 10},
+    {"variable_name": "attorney_rate", "label": "Attorney Rate / Fee Amount", "category": "Engagement",
+     "applies_to": "engagement_letter", "example": "$3,500",
+     "description": "Dollar amount of the selected fee. Resolved from firm settings by rate_type.", "sort_order": 10},
+    {"variable_name": "rate_type", "label": "Rate Type Key", "category": "Engagement",
+     "applies_to": "engagement_letter",
+     "example": "flat_individual_trust",
+     "description": "Key string for the selected rate. Use with {% if rate_type == 'hourly' %} blocks.", "sort_order": 20},
+    {"variable_name": "rate_description", "label": "Rate Description (prose)", "category": "Engagement",
+     "applies_to": "engagement_letter",
+     "example": "a flat fee of $3,500 for an individual trust-based estate plan",
+     "description": "Full prose phrase ready to insert into the engagement letter body.", "sort_order": 30},
 
     # --- System (computed at generation time) ---
     {"variable_name": "date_verbose", "label": "Date (verbose)", "category": "System",

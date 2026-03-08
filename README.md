@@ -5,6 +5,9 @@
 > generates populated Word (.docx) + PDF estate planning documents, and can upload
 > completed files back to the Clio matter folder.
 
+**Product vision and build order:** See [SCOPE.md](SCOPE.md)
+**After each feature:** update README backlog + SCOPE.md checklist + `git push`
+
 ---
 
 ## Stack
@@ -391,10 +394,11 @@ Set **Clio Redirect URI** to: `https://yourdomain.com/api/auth/clio/callback`
 
 ## What Still Needs to Be Built
 
-These features have been discussed and planned but not yet implemented. Resume here.
+See [SCOPE.md](SCOPE.md) for the full prioritized build order with checkboxes.
+Resume from the first unchecked item in SCOPE.md Phase 1.
 
 ### 1. Wizard: Auto-Populate from Clio Custom Fields
-**Priority: High**
+**Priority: High — build next**
 When a matter opens in the wizard, Quill should read Hillary's Clio custom fields on the matter and pre-fill wizard answers automatically. Fields to auto-populate:
 
 - `trust_name` ← Clio field 14358376

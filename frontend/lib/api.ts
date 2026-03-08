@@ -116,6 +116,10 @@ export const uploadTemplate = (key: string, file: File) => {
   });
 };
 
+// --- Firm Settings ---
+export const getFirmSettings = () => api.get<{ data: FirmSettingsData }>("/firm-settings");
+export const updateFirmSettings = (data: Partial<RateValues>) => api.patch<{ data: FirmSettingsData }>("/firm-settings", data);
+
 // --- Types ---
 export interface Matter {
   id: number;
@@ -211,4 +215,24 @@ export interface ClioStandardFieldDef {
   source: "contact" | "matter" | "system";
   variable_name: string;
   template_syntax: string;
+}
+
+export interface RateType {
+  key: string;
+  label: string;
+  description_template: string;
+}
+
+export interface RateValues {
+  rate_flat_joint_trust: string;
+  rate_flat_individual_trust: string;
+  rate_flat_joint_will: string;
+  rate_flat_individual_will: string;
+  rate_hourly: string;
+}
+
+export interface FirmSettingsData {
+  rates: Record<string, string>;
+  rate_types: RateType[];
+  updated_at: string | null;
 }

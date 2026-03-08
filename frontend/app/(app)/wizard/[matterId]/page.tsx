@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { getMatter, listDocumentTypes, generateDocument, type DocType } from "@/lib/api";
+import { getMatter, listDocumentTypes, generateDocument, getFirmSettings, type DocType } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,6 +35,15 @@ type WizardData = {
   include_pregnancy_clause: boolean;
   trust_name: string;
   selected_documents: string[];
+  rate_key: string;
+};
+
+const RATE_TYPE_DESCRIPTIONS: Record<string, string> = {
+  flat_joint_trust: "a flat fee of {amount} for a joint trust-based estate plan",
+  flat_individual_trust: "a flat fee of {amount} for an individual trust-based estate plan",
+  flat_joint_will: "a flat fee of {amount} for a joint will-based estate plan including a beneficiary deed",
+  flat_individual_will: "a flat fee of {amount} for an individual will-based estate plan including a beneficiary deed",
+  hourly: "an hourly basis at the rate of {amount} per hour",
 };
 
 // Derive wizard steps dynamically — Trust step only if trust is selected
@@ -42,6 +51,7 @@ function getSteps(selectedDocs: string[]): string[] {
   const steps = ["Setup", "Documents"];
   if (selectedDocs.includes("trust")) steps.push("Trust");
   if (selectedDocs.includes("living_will")) steps.push("Living Will");
+  if (selectedDocs.includes("engagement_letter")) steps.splice(steps.indexOf("Review") === -1 ? steps.length : steps.indexOf("Review"), 0, "Fee");
   steps.push("Review");
   return steps;
 }
@@ -58,7 +68,9 @@ export default function WizardPage() {
     include_pregnancy_clause: false,
     trust_name: "",
     selected_documents: [],
+    rate_key: "",
   });
+  const [firmRates, setFirmRates] = useState<Record<string, string>>({});
   const [isGenerating, setIsGenerating] = useState(false);
 
   const { data: matter, isLoading: matterLoading } = useQuery({
@@ -70,6 +82,13 @@ export default function WizardPage() {
     queryKey: ["document-types"],
     queryFn: () => listDocumentTypes().then((r) => r.data.data),
   });
+
+  // Fetch firm rates on mount for fee step and generate payload
+  useEffect(() => {
+    getFirmSettings()
+      .then((r) => setFirmRates(r.data.data.rates))
+      .catch(() => {});
+  }, []);
 
   // Pre-select docs from Clio checkbox custom fields when matter loads
   useEffect(() => {
@@ -127,6 +146,12 @@ async function handleGenerate() {
       include_pregnancy_clause: data.include_pregnancy_clause,
       trust_name: data.trust_name,
       selected_documents: data.selected_documents,
+      rate_key: data.rate_key,
+      attorney_rate: data.rate_key && firmRates ? (firmRates[data.rate_key] ?? "") : "",
+      rate_type: data.rate_key,
+      rate_description: data.rate_key && firmRates
+        ? (RATE_TYPE_DESCRIPTIONS[data.rate_key] ?? "").replace("{amount}", firmRates[data.rate_key] ?? "")
+        : "",
     };
 
     const requests = data.selected_documents.map((wizard_key) => ({
@@ -223,6 +248,9 @@ async function handleGenerate() {
         )}
         {currentStepName === "Living Will" && (
           <StepLivingWill data={data} />
+        )}
+        {currentStepName === "Fee" && (
+          <StepFee data={data} update={update} firmRates={firmRates} />
         )}
         {currentStepName === "Review" && (
           <StepReview data={data} matter={matter} docTypes={docTypes ?? []} onGenerate={handleGenerate} isGenerating={isGenerating} />
@@ -464,6 +492,9 @@ function StepReview({
           <ReviewRow label="Structure" value={data.structure} />
           <ReviewRow label="Pronouns" value={data.is_female ? "She/Her" : "He/Him"} />
           {data.trust_name && <ReviewRow label="Trust name" value={data.trust_name} />}
+          {data.rate_key && (
+            <ReviewRow label="Fee structure" value={data.rate_key.replace(/_/g, " ")} />
+          )}
         </ReviewSection>
 
         <ReviewSection title="Selected Documents">
@@ -509,6 +540,66 @@ function ReviewRow({ label, value, warn }: { label: string; value: string; warn?
     <div className="flex justify-between px-4 py-2.5 text-sm">
       {label && <span className="text-slate-500">{label}</span>}
       <span className={cn("font-medium", warn ? "text-red-500" : "text-slate-900")}>{value}</span>
+    </div>
+  );
+}
+
+
+// --- Fee Step ---
+
+function StepFee({
+  data,
+  update,
+  firmRates,
+}: {
+  data: WizardData;
+  update: Function;
+  firmRates: Record<string, string>;
+}) {
+  const rateTypes = [
+    { key: "flat_joint_trust", label: "Joint Trust Estate Plan" },
+    { key: "flat_individual_trust", label: "Individual Trust Estate Plan" },
+    { key: "flat_joint_will", label: "Joint Will & Beneficiary Deed" },
+    { key: "flat_individual_will", label: "Individual Will & Beneficiary Deed" },
+    { key: "hourly", label: "Hourly Rate" },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-medium text-slate-900 mb-1">Fee Agreement</h2>
+        <p className="text-sm text-slate-500">Select the fee structure for this engagement letter.</p>
+      </div>
+      <div className="space-y-2">
+        {rateTypes.map((rt) => {
+          const amount = firmRates[rt.key] || "";
+          const selected = data.rate_key === rt.key;
+          return (
+            <button
+              key={rt.key}
+              onClick={() => update("rate_key", rt.key)}
+              className={cn(
+                "w-full flex items-center justify-between px-4 py-3 rounded-lg border text-sm text-left transition-colors",
+                selected
+                  ? "border-slate-900 bg-slate-50 text-slate-900 font-medium"
+                  : "border-slate-200 text-slate-600 hover:border-slate-300"
+              )}
+            >
+              <span>{rt.label}</span>
+              <span className={cn("font-mono text-sm", selected ? "text-slate-900" : "text-slate-400")}>
+                {amount || <span className="italic text-slate-300">not set</span>}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {data.rate_key && (
+        <p className="text-xs text-slate-400">
+          Template will receive:{" "}
+          <code className="bg-slate-100 px-1 rounded">{"{{ attorney_rate }}"}</code> ={" "}
+          {firmRates[data.rate_key] || "—"}
+        </p>
+      )}
     </div>
   );
 }

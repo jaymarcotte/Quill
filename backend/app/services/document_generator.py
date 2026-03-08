@@ -80,6 +80,8 @@ def build_context(document_type: str, wizard_data: dict) -> dict:
         # Matter / Trust
         "trust_name": wizard_data.get("trust_name", ""),
         "attorney_rate": wizard_data.get("attorney_rate", ""),
+        "rate_type": wizard_data.get("rate_type", ""),
+        "rate_description": wizard_data.get("rate_description", ""),
 
         # Dates
         "date_verbose": date_verbose,
