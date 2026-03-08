@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
-from app.api import auth, matters, contacts, documents
+from app.api import auth, matters, contacts, documents, clio_fields
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,6 +39,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(matters.router, prefix="/api")
 app.include_router(contacts.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
+app.include_router(clio_fields.router, prefix="/api")
 
 
 @app.get("/health")
