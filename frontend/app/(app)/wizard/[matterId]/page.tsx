@@ -127,6 +127,7 @@ export default function WizardPage() {
     rate_key: "",
   });
   const [firmRates, setFirmRates] = useState<Record<string, string>>({});
+  const [clioAutoFilled, setClioAutoFilled] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
 
   const { data: matter, isLoading: matterLoading } = useQuery({
@@ -146,21 +147,87 @@ export default function WizardPage() {
       .catch(() => {});
   }, []);
 
-  // Pre-select docs from Clio checkbox custom fields when matter loads
+  // Auto-populate wizard state from Clio custom field values when matter loads
   useEffect(() => {
     if (!matter?.custom_field_values) return;
-    const preSelected: string[] = [];
+
+    // Build a lookup: field definition ID → value
+    const byFieldId: Record<number, unknown> = {};
     for (const cf of matter.custom_field_values) {
-      // Find by field_name matching known Clio field IDs
-      const clioFieldId = Object.entries(CLIO_FIELD_TO_KEY).find(
-        ([, key]) => cf.field_name?.toLowerCase().includes(key.replace(/_/g, " ")) || false
-      )?.[0];
-      if (clioFieldId && cf.value === true) {
-        preSelected.push(CLIO_FIELD_TO_KEY[Number(clioFieldId)]);
-      }
+      const defId = cf.custom_field?.id;
+      if (defId !== undefined) byFieldId[defId] = cf.value;
     }
-    if (preSelected.length > 0) {
-      setData((prev) => ({ ...prev, selected_documents: preSelected }));
+
+    const patch: Partial<WizardData> = {};
+
+    // Trust name (field 14358376)
+    if (byFieldId[14358376]) patch.trust_name = String(byFieldId[14358376]);
+
+    // Estate structure: "Joint" or "Single" (field 15902438)
+    const structureVal = String(byFieldId[15902438] ?? "").toLowerCase();
+    if (structureVal === "joint") patch.structure = "joint";
+    else if (structureVal === "single") patch.structure = "single";
+
+    // Pronoun / gender (field 14358646) — "She/Her" → is_female: true
+    const pronounVal = String(byFieldId[14358646] ?? "").toLowerCase();
+    if (pronounVal.includes("she")) { patch.is_female = true; }
+    else if (pronounVal.includes("he")) { patch.is_female = false; }
+
+    // HC agent structure (field 14078733)
+    const hcStructure = String(byFieldId[14078733] ?? "").toLowerCase();
+    if (hcStructure) {
+      if (hcStructure.includes("co")) patch.hc_agent_structure = "co_agents";
+      else if (hcStructure.includes("successor") || hcStructure.includes("primary")) patch.hc_agent_structure = "primary_successor";
+      else patch.hc_agent_structure = "single";
+    }
+
+    // POA agents (fields 14759332, 14759377, 13845063, 13845093)
+    if (byFieldId[14759332]) patch.poa_agent_1a = String(byFieldId[14759332]);
+    if (byFieldId[14759377]) patch.poa_agent_1b = String(byFieldId[14759377]);
+    if (byFieldId[13845063]) patch.poa_agent_2  = String(byFieldId[13845063]);
+    if (byFieldId[13845093]) patch.poa_agent_3  = String(byFieldId[13845093]);
+    if (patch.poa_agent_1b)  patch.poa_has_co_agents = true;
+
+    // Trustees (field 14759662 — comma-separated or single name)
+    if (byFieldId[14759662]) {
+      const trustees = String(byFieldId[14759662]).split(/,\s*/);
+      if (trustees[0]) patch.trustee_1 = trustees[0];
+      if (trustees[1]) patch.trustee_2 = trustees[1];
+    }
+
+    // Children (fields 14078358, 14078583) — will populate child_1/child_2 once trustees step is built
+
+    // Document checkboxes (fields 15903668–15903833)
+    const docFieldMap: Record<number, string> = {
+      15903668: "engagement_letter",
+      15903683: "trust",
+      15903698: "pourover_will",
+      15903713: "will_no_trust",
+      15903728: "hc_poa",
+      15903743: "general_poa",
+      15903758: "special_warranty_deed",
+      15903773: "beneficiary_deed",
+      15903788: "closing_letter",
+      15903803: "trust_amendment",
+      15903833: "living_will",
+    };
+    const preSelected: string[] = [];
+    for (const [fieldId, wizKey] of Object.entries(docFieldMap)) {
+      if (byFieldId[Number(fieldId)] === true) preSelected.push(wizKey);
+    }
+    if (preSelected.length > 0) patch.selected_documents = preSelected;
+
+    if (Object.keys(patch).length > 0) {
+      setData((prev) => ({ ...prev, ...patch }));
+      const filled: string[] = [];
+      if (patch.trust_name)          filled.push("Trust Name");
+      if (patch.structure)           filled.push("Estate Structure");
+      if (patch.is_female !== undefined) filled.push("Pronouns");
+      if (patch.hc_agent_structure)  filled.push("HC Agent Structure");
+      if (patch.poa_agent_1a)        filled.push("POA Agents");
+      if (patch.trustee_1)           filled.push("Trustees");
+      if (patch.selected_documents?.length) filled.push(`${patch.selected_documents.length} document${patch.selected_documents.length !== 1 ? "s" : ""} selected`);
+      setClioAutoFilled(filled);
     }
   }, [matter]);
 
@@ -283,6 +350,20 @@ async function handleGenerate() {
           <ChevronLeft className="h-4 w-4" /> Back to matters
         </button>
         <h1 className="text-xl font-semibold text-slate-900">{matterLabel}</h1>
+
+        {/* Clio auto-fill banner */}
+        {clioAutoFilled.length > 0 && (
+          <div className="mt-4 flex items-start gap-2 px-3 py-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-700">
+            <Check className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <span>
+              Pre-filled from Clio: <span className="font-medium">{clioAutoFilled.join(", ")}</span>.
+              Review each step and adjust if needed.
+            </span>
+            <button onClick={() => setClioAutoFilled([])} className="ml-auto shrink-0 text-emerald-400 hover:text-emerald-600">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Step progress */}
         <div className="flex items-center gap-2 mt-5 flex-wrap">

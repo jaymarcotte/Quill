@@ -91,7 +91,7 @@ class ClioClient:
         return matters
 
     async def get_matter(self, matter_id: int) -> dict | None:
-        fields = "id,etag,display_number,description,status,client{id,name},custom_field_values{id,etag,field_name,value}"
+        fields = "id,etag,display_number,description,status,client{id,name},custom_field_values{id,etag,field_name,value,custom_field{id}}"
         data, status_code = await self.get(f"matters/{matter_id}", params={"fields": fields})
         if status_code == 200:
             return data.get("data")

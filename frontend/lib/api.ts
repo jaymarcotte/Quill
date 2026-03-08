@@ -127,7 +127,7 @@ export interface Matter {
   description: string;
   status: string;
   client?: { id: number; name: string };
-  custom_field_values?: { field_name?: string; value?: unknown }[];
+  custom_field_values?: { field_name?: string; value?: unknown; custom_field?: { id: number } }[];
 }
 
 export interface GenerateRequest {
