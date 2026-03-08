@@ -75,8 +75,8 @@ Work through these in sequence. Check off each when complete and update README b
 - [x] Firm rate schedule in Settings (5 named rates)
 - [x] Fee step in wizard when Engagement Letter selected
 - [x] `attorney_rate`, `rate_type`, `rate_description` template variables
-- [ ] **NEXT: Clio auto-populate** — read `custom_field_values` already on the matter and fill wizard state automatically (trust_name, structure, is_female, document checkboxes, agents, trustees)
-- [ ] Matter-type-first wizard entry — select Estate Planning / Probate / etc. before Setup
+- [x] Clio auto-populate — reads `custom_field_values` by field definition ID; fills trust_name, structure, is_female, document checkboxes, HC structure, POA agents 1a/1b/2/3, trustees; green banner confirms what was pre-filled
+- [x] Matter-type-first wizard entry — Estate Planning / Probate / Guardianship / Trust Administration as step 0
 - [ ] Expanded pronoun model — She/Her, He/Him, They/Them, and how they affect template grammar
 - [x] Wizard: HC POA step — inputs for hc_agent_1, hc_agent_2, hc_agent_structure
 - [x] Wizard: General POA step — inputs for poa_agent_1a, poa_agent_1b, poa_andor, poa_agent_2, poa_agent_3
