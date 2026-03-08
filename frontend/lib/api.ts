@@ -84,6 +84,13 @@ export const downloadDocumentTypeTemplate = async (id: number, variant: string, 
   URL.revokeObjectURL(url);
 };
 
+// --- Fields ---
+export const listQuillFields = () => api.get<{ data: QuillFieldDef[] }>("/fields/quill");
+export const createQuillField = (data: Partial<QuillFieldDef>) => api.post<{ data: QuillFieldDef }>("/fields/quill", data);
+export const updateQuillField = (id: number, data: Partial<QuillFieldDef>) => api.patch<{ data: QuillFieldDef }>(`/fields/quill/${id}`, data);
+export const deleteQuillField = (id: number) => api.delete(`/fields/quill/${id}`);
+export const listClioFields = () => api.get<{ data: ClioFieldDef[] }>("/fields/clio");
+
 // --- Templates ---
 export const listTemplates = () => api.get("/templates");
 export const downloadTemplate = async (key: string, filename: string) => {
@@ -166,4 +173,27 @@ export interface MatterRelationship {
   id: number;
   description: string;
   contact: { id: number; name: string };
+}
+
+export interface QuillFieldDef {
+  id: number;
+  variable_name: string;
+  label: string;
+  category: string;
+  applies_to: string;
+  description: string | null;
+  example: string | null;
+  active: boolean;
+  sort_order: number;
+  template_syntax: string;
+}
+
+export interface ClioFieldDef {
+  id: number;
+  name: string;
+  field_type: string;
+  source: "contact" | "matter";
+  variable_name: string;
+  template_syntax: string;
+  picklist_options: string[];
 }
