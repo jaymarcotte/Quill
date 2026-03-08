@@ -28,7 +28,15 @@ const CLIO_FIELD_TO_KEY: Record<number, string> = {
   15903833: "living_will",
 };
 
+const MATTER_TYPES = [
+  { key: "estate_planning",              label: "Estate Planning",                 description: "Trusts, wills, POAs, living wills, and related documents" },
+  { key: "probate",                      label: "Probate",                         description: "Court-supervised administration of a deceased person's estate" },
+  { key: "guardianship_conservatorship", label: "Guardianship / Conservatorship",  description: "Legal authority over a minor or incapacitated adult" },
+  { key: "trust_administration",         label: "Trust Administration",            description: "Ongoing administration of an existing trust" },
+];
+
 type WizardData = {
+  matter_type: string;
   structure: "single" | "joint";
   client: { id: number; name: string; first_name: string; last_name: string; prefix: string } | null;
   client_2: { id: number; name: string } | null;
@@ -79,7 +87,7 @@ const DOCUMENT_STEPS: [string, string][] = [
 ];
 
 function getSteps(selectedDocs: string[]): string[] {
-  const steps = ["Setup", "Documents"];
+  const steps = ["Matter Type", "Setup", "Documents"];
   for (const [stepName, key] of DOCUMENT_STEPS) {
     if (selectedDocs.includes(key)) steps.push(stepName);
   }
@@ -92,6 +100,7 @@ export default function WizardPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [data, setData] = useState<WizardData>({
+    matter_type: "",
     structure: "single",
     client: null,
     client_2: null,
@@ -183,6 +192,7 @@ async function handleGenerate() {
     setIsGenerating(true);
     const matterLabel = `${matter.display_number} - ${matter.description}`;
     const wizardPayload = {
+      matter_type: data.matter_type,
       client: {
         name: data.client.name,
         first_name: data.client.first_name,
@@ -300,6 +310,9 @@ async function handleGenerate() {
 
       {/* Step content */}
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+        {currentStepName === "Matter Type" && (
+          <StepMatterType data={data} update={update} onNext={() => setStep((s) => s + 1)} />
+        )}
         {currentStepName === "Setup" && (
           <StepSetup data={data} update={update} matterId={Number(matterId)} />
         )}
@@ -346,6 +359,48 @@ async function handleGenerate() {
             }
           </Button>
         )}
+      </div>
+    </div>
+  );
+}
+
+
+// --- Matter Type Step ---
+
+function StepMatterType({ data, update, onNext }: { data: WizardData; update: Function; onNext: () => void }) {
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-medium text-slate-900 mb-1">Matter Type</h2>
+        <p className="text-sm text-slate-500">What kind of matter is this? This determines which documents are available.</p>
+      </div>
+      <div className="space-y-2">
+        {MATTER_TYPES.map((mt) => {
+          const selected = data.matter_type === mt.key;
+          return (
+            <button
+              key={mt.key}
+              onClick={() => { update("matter_type", mt.key); onNext(); }}
+              className={cn(
+                "w-full text-left px-4 py-4 rounded-lg border transition-colors",
+                selected
+                  ? "border-slate-900 bg-slate-50"
+                  : "border-slate-200 hover:border-slate-300"
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "w-4 h-4 rounded-full border-2 shrink-0",
+                  selected ? "border-slate-900 bg-slate-900" : "border-slate-300"
+                )} />
+                <div>
+                  <p className={cn("text-sm font-medium", selected ? "text-slate-900" : "text-slate-700")}>{mt.label}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{mt.description}</p>
+                </div>
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -649,6 +704,10 @@ function StepReview({
       <div className="space-y-4">
         <ReviewSection title="Matter">
           <ReviewRow label="Matter" value={matter ? `${matter.display_number} — ${matter.description}` : "—"} />
+          {data.matter_type
+            ? <ReviewRow label="Matter Type" value={MATTER_TYPES.find((t) => t.key === data.matter_type)?.label ?? data.matter_type} />
+            : <ReviewRow label="Matter Type" value="Not selected" warn />
+          }
         </ReviewSection>
 
         <ReviewSection title="Setup">
