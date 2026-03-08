@@ -20,6 +20,10 @@ class DocumentType(Base):
     # e.g. "living_will", "trust", "hc_poa"
     wizard_key: Mapped[str] = mapped_column(String(100), unique=True, index=True)
 
+    # Practice area / matter type this document belongs to.
+    # estate_planning | probate | guardianship_conservatorship | trust_administration | all
+    matter_type: Mapped[str] = mapped_column(String(100), default="estate_planning")
+
     # Clio custom field ID for the document checkbox (e.g. 15903833 for Living Will)
     # NULL means no Clio checkbox maps to this doc type
     clio_field_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

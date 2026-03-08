@@ -137,6 +137,7 @@ export interface DocType {
   id: number;
   label: string;
   wizard_key: string;
+  matter_type: string;
   clio_field_id: number | null;
   template_default: string | null;
   template_single_male: string | null;

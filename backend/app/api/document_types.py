@@ -18,9 +18,13 @@ router = APIRouter(prefix="/document-types", tags=["document-types"])
 settings = get_settings()
 
 
+MATTER_TYPES = ["estate_planning", "probate", "guardianship_conservatorship", "trust_administration", "all"]
+
+
 class DocumentTypeCreate(BaseModel):
     label: str
     wizard_key: str
+    matter_type: str = "estate_planning"
     clio_field_id: Optional[int] = None
     template_default: Optional[str] = None
     template_single_male: Optional[str] = None
@@ -33,6 +37,7 @@ class DocumentTypeCreate(BaseModel):
 
 class DocumentTypeUpdate(BaseModel):
     label: Optional[str] = None
+    matter_type: Optional[str] = None
     clio_field_id: Optional[int] = None
     sort_order: Optional[int] = None
     active: Optional[bool] = None
@@ -48,6 +53,7 @@ def _serialize(dt: DocumentType) -> dict:
         "id": dt.id,
         "label": dt.label,
         "wizard_key": dt.wizard_key,
+        "matter_type": dt.matter_type,
         "clio_field_id": dt.clio_field_id,
         "template_default": dt.template_default,
         "template_single_male": dt.template_single_male,
@@ -63,6 +69,20 @@ def _serialize(dt: DocumentType) -> dict:
             dt.template_single_female and os.path.exists(os.path.join(settings.templates_dir, dt.template_single_female)),
         ]),
     }
+
+
+MATTER_TYPE_LABELS = {
+    "estate_planning": "Estate Planning",
+    "probate": "Probate",
+    "guardianship_conservatorship": "Guardianship / Conservatorship",
+    "trust_administration": "Trust Administration",
+    "all": "All Matter Types",
+}
+
+
+@router.get("/matter-types")
+async def list_matter_types(current_user: User = Depends(get_current_user)):
+    return {"data": [{"value": k, "label": v} for k, v in MATTER_TYPE_LABELS.items()]}
 
 
 @router.get("")
