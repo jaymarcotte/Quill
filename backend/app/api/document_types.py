@@ -1,6 +1,13 @@
 """
 Document type configuration API.
 Allows Hillary to manage document types: add, edit, reorder, assign templates.
+
+Template variants (simplified):
+  default — one template regardless of structure
+  single  — single-client matters
+  joint   — joint/married matters (falls back to single)
+
+Gender/pronoun handling is done inside the Word template via Jinja2 conditionals.
 """
 import os
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -17,8 +24,8 @@ from app.config import get_settings
 router = APIRouter(prefix="/document-types", tags=["document-types"])
 settings = get_settings()
 
-
 MATTER_TYPES = ["estate_planning", "probate", "guardianship_conservatorship", "trust_administration", "all"]
+VALID_VARIANTS = {"default", "single", "joint"}
 
 
 class DocumentTypeCreate(BaseModel):
@@ -27,10 +34,8 @@ class DocumentTypeCreate(BaseModel):
     matter_type: str = "estate_planning"
     clio_field_id: Optional[int] = None
     template_default: Optional[str] = None
-    template_single_male: Optional[str] = None
-    template_single_female: Optional[str] = None
-    template_joint_male: Optional[str] = None
-    template_joint_female: Optional[str] = None
+    template_single: Optional[str] = None
+    template_joint: Optional[str] = None
     sort_order: int = 100
     active: bool = True
 
@@ -48,6 +53,10 @@ class ReorderItem(BaseModel):
     sort_order: int
 
 
+def _has_template_on_disk(filename: str | None) -> bool:
+    return bool(filename and os.path.exists(os.path.join(settings.templates_dir, filename)))
+
+
 def _serialize(dt: DocumentType) -> dict:
     return {
         "id": dt.id,
@@ -56,17 +65,14 @@ def _serialize(dt: DocumentType) -> dict:
         "matter_type": dt.matter_type,
         "clio_field_id": dt.clio_field_id,
         "template_default": dt.template_default,
-        "template_single_male": dt.template_single_male,
-        "template_single_female": dt.template_single_female,
-        "template_joint_male": dt.template_joint_male,
-        "template_joint_female": dt.template_joint_female,
+        "template_single": dt.template_single,
+        "template_joint": dt.template_joint,
         "sort_order": dt.sort_order,
         "active": dt.active,
-        # Which variants have templates on disk
         "has_template": any([
-            dt.template_default and os.path.exists(os.path.join(settings.templates_dir, dt.template_default)),
-            dt.template_single_male and os.path.exists(os.path.join(settings.templates_dir, dt.template_single_male)),
-            dt.template_single_female and os.path.exists(os.path.join(settings.templates_dir, dt.template_single_female)),
+            _has_template_on_disk(dt.template_default),
+            _has_template_on_disk(dt.template_single),
+            _has_template_on_disk(dt.template_joint),
         ]),
     }
 
@@ -158,7 +164,7 @@ async def delete_document_type(
 @router.post("/{dt_id}/upload/{variant}")
 async def upload_template_for_type(
     dt_id: int,
-    variant: str,  # default | single_male | single_female | joint_male | joint_female
+    variant: str,  # default | single | joint
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -169,19 +175,15 @@ async def upload_template_for_type(
         raise HTTPException(status_code=404, detail="Document type not found")
     if not file.filename or not file.filename.endswith(".docx"):
         raise HTTPException(status_code=400, detail="Must be a .docx file")
+    if variant not in VALID_VARIANTS:
+        raise HTTPException(status_code=400, detail=f"variant must be one of {VALID_VARIANTS}")
 
-    valid_variants = {"default", "single_male", "single_female", "joint_male", "joint_female"}
-    if variant not in valid_variants:
-        raise HTTPException(status_code=400, detail=f"variant must be one of {valid_variants}")
-
-    # Build a clean filename: wizard_key_variant.docx
     filename = f"{dt.wizard_key}_{variant}.docx"
     path = os.path.join(settings.templates_dir, filename)
     content = await file.read()
     with open(path, "wb") as f:
         f.write(content)
 
-    # Update the DB record
     setattr(dt, f"template_{variant}", filename)
     db.commit()
 

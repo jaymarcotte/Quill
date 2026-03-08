@@ -147,10 +147,8 @@ export interface DocType {
   matter_type: string;
   clio_field_id: number | null;
   template_default: string | null;
-  template_single_male: string | null;
-  template_single_female: string | null;
-  template_joint_male: string | null;
-  template_joint_female: string | null;
+  template_single: string | null;
+  template_joint: string | null;
   sort_order: number;
   active: boolean;
   has_template: boolean;

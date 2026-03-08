@@ -29,25 +29,20 @@ class GenerateRequest(BaseModel):
     document_type: Optional[str] = None
 
 
-def _resolve_template(db: Session, wizard_key: str, structure: str, is_female: bool) -> tuple[str, str]:
+def _resolve_template(db: Session, wizard_key: str, structure: str) -> tuple[str, str]:
     """
     Look up DocumentType by wizard_key and return (template_filename, resolved_key).
-    Picks the most specific variant available: joint > single, gendered > default.
-    Raises HTTPException if no template is assigned.
+    Priority: joint (if joint) → single → default.
+    Gender/pronoun handling is done inside the template via Jinja2 conditionals.
     """
     dt = db.query(DocumentType).filter(DocumentType.wizard_key == wizard_key).first()
     if not dt:
         raise HTTPException(status_code=404, detail=f"Unknown document type: {wizard_key}")
 
-    gender = "female" if is_female else "male"
-
-    # Priority: exact structure+gender > opposite gender > single+gender > default
+    # Priority: structure-specific > single > default
     candidates = [
-        (f"template_{structure}_{gender}", f"{wizard_key}_{structure}_{gender}"),
-        (f"template_{structure}_male", f"{wizard_key}_{structure}_male"),
-        (f"template_{structure}_female", f"{wizard_key}_{structure}_female"),
-        ("template_single_male", f"{wizard_key}_single_male"),
-        ("template_single_female", f"{wizard_key}_single_female"),
+        (f"template_{structure}", f"{wizard_key}_{structure}"),
+        ("template_single", f"{wizard_key}_single"),
         ("template_default", wizard_key),
     ]
 
@@ -60,7 +55,7 @@ def _resolve_template(db: Session, wizard_key: str, structure: str, is_female: b
 
     raise HTTPException(
         status_code=400,
-        detail=f"No template file found for '{wizard_key}' (structure={structure}, gender={gender}). Upload a template first."
+        detail=f"No template file found for '{wizard_key}' (structure={structure}). Upload a template first."
     )
 
 
@@ -72,8 +67,7 @@ async def generate_document(
     current_user: User = Depends(get_current_user),
     clio: ClioClient = Depends(get_current_user_clio_client),
 ):
-    is_female = req.wizard_data.get("is_female", False)
-    template_filename, resolved_key = _resolve_template(db, req.wizard_key, req.structure, is_female)
+    template_filename, resolved_key = _resolve_template(db, req.wizard_key, req.structure)
 
     # Build output filename
     safe_label = req.matter_label.replace("/", "-").replace(" ", "_")[:50]

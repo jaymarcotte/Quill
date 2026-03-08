@@ -1,7 +1,14 @@
 """
 Seed document types into the DB from the canonical list.
 Run on startup if the table is empty.
-Also runs backfill_matter_type() to patch any existing rows missing matter_type.
+
+Template variant model (simplified — no gender columns):
+  template_single  — used for single-client matters
+  template_joint   — used for joint/married matters (falls back to template_single)
+  template_default — catch-all regardless of structure
+
+Gender / pronoun handling is done inside the Word templates via Jinja2
+{% if is_female %} blocks. The template file itself does not change.
 """
 from sqlalchemy.orm import Session
 from app.models.document_type import DocumentType
@@ -10,6 +17,8 @@ from app.models.document_type import DocumentType
 #   estate_planning | probate | guardianship_conservatorship | trust_administration | all
 
 # Canonical ordered list — matches Hillary's requested order exactly.
+# template_single / template_joint point at the actual .docx filenames on disk.
+# A document with only one template (no structural difference) uses template_default.
 SEED_DATA = [
     {
         "label": "Engagement Letter",
@@ -24,8 +33,7 @@ SEED_DATA = [
         "wizard_key": "trust",
         "matter_type": "estate_planning",
         "clio_field_id": 15903683,
-        "template_single_male": "__Single - Trust.docx",
-        "template_single_female": "__Single - Trust.docx",
+        "template_single": "__Single - Trust.docx",
         "sort_order": 20,
     },
     {
@@ -33,8 +41,7 @@ SEED_DATA = [
         "wizard_key": "certificate_of_trust",
         "matter_type": "estate_planning",
         "clio_field_id": None,
-        "template_single_male": "__Single - Certificate of Trust.docx",
-        "template_single_female": "__Single - Certificate of Trust.docx",
+        "template_single": "__Single - Certificate of Trust.docx",
         "sort_order": 30,
     },
     {
@@ -42,7 +49,6 @@ SEED_DATA = [
         "wizard_key": "trust_amendment",
         "matter_type": "estate_planning",
         "clio_field_id": 15903803,
-        "template_default": None,
         "sort_order": 40,
     },
     {
@@ -50,8 +56,7 @@ SEED_DATA = [
         "wizard_key": "pourover_will",
         "matter_type": "estate_planning",
         "clio_field_id": 15903698,
-        "template_single_male": "__Single - Male - Pourover Will.docx",
-        "template_single_female": "__Single - Female - Pourover Will.docx",
+        "template_single": "__Single - Pourover Will.docx",
         "sort_order": 50,
     },
     {
@@ -59,7 +64,6 @@ SEED_DATA = [
         "wizard_key": "will_no_trust",
         "matter_type": "estate_planning",
         "clio_field_id": 15903713,
-        "template_default": None,
         "sort_order": 60,
     },
     {
@@ -67,8 +71,7 @@ SEED_DATA = [
         "wizard_key": "hc_poa",
         "matter_type": "estate_planning",
         "clio_field_id": 15903728,
-        "template_single_male": "__Single -Male -HC  POA.docx",
-        "template_single_female": "__Single - Female - HC POA.docx",
+        "template_single": "__Single - HC POA.docx",
         "sort_order": 70,
     },
     {
@@ -76,8 +79,7 @@ SEED_DATA = [
         "wizard_key": "general_poa",
         "matter_type": "estate_planning",
         "clio_field_id": 15903743,
-        "template_single_male": "__Single -Male -General POA.docx",
-        "template_single_female": "__Single - Female - General POA.docx",
+        "template_single": "__Single - General POA.docx",
         "sort_order": 80,
     },
     {
@@ -85,10 +87,8 @@ SEED_DATA = [
         "wizard_key": "living_will",
         "matter_type": "estate_planning",
         "clio_field_id": 15903833,
-        "template_single_male": "__Single -Male - Living Will.docx",
-        "template_single_female": "__Single - Female - Living Will.docx",
-        "template_joint_male": "__Married - Male - Living Will.docx",
-        "template_joint_female": "__Married - Female  - Living Will.docx",
+        "template_single": "__Single - Living Will.docx",
+        "template_joint": "__Married - Living Will.docx",
         "sort_order": 90,
     },
     {
@@ -96,7 +96,6 @@ SEED_DATA = [
         "wizard_key": "az_hcdr",
         "matter_type": "estate_planning",
         "clio_field_id": None,
-        "template_default": None,
         "sort_order": 100,
     },
     {
@@ -104,7 +103,6 @@ SEED_DATA = [
         "wizard_key": "special_warranty_deed",
         "matter_type": "estate_planning",
         "clio_field_id": 15903758,
-        "template_default": None,
         "sort_order": 110,
     },
     {
@@ -112,7 +110,6 @@ SEED_DATA = [
         "wizard_key": "beneficiary_deed",
         "matter_type": "estate_planning",
         "clio_field_id": 15903773,
-        "template_default": None,
         "sort_order": 120,
     },
     {
@@ -120,7 +117,6 @@ SEED_DATA = [
         "wizard_key": "llc_articles",
         "matter_type": "estate_planning",
         "clio_field_id": None,
-        "template_default": None,
         "sort_order": 130,
     },
     {
@@ -136,7 +132,6 @@ SEED_DATA = [
         "wizard_key": "portfolio_trust",
         "matter_type": "estate_planning",
         "clio_field_id": None,
-        "template_default": None,
         "sort_order": 150,
     },
     {
@@ -144,7 +139,6 @@ SEED_DATA = [
         "wizard_key": "portfolio_no_trust",
         "matter_type": "estate_planning",
         "clio_field_id": None,
-        "template_default": None,
         "sort_order": 160,
     },
     {
@@ -152,19 +146,30 @@ SEED_DATA = [
         "wizard_key": "closing_letter",
         "matter_type": "all",
         "clio_field_id": 15903788,
-        "template_single_male": "__Single - Closing Summary Letter.docx",
-        "template_single_female": "__Single - Closing Summary Letter.docx",
+        "template_single": "__Single - Closing Summary Letter.docx",
         "sort_order": 170,
     },
 ]
 
 # matter_type backfill map — wizard_key -> matter_type
-# Used to patch existing rows that predate the matter_type column.
 MATTER_TYPE_BACKFILL: dict[str, str] = {item["wizard_key"]: item["matter_type"] for item in SEED_DATA}
+
+# Old gendered filenames → canonical new name
+# Used to migrate existing rows that used the old column names.
+_GENDER_MIGRATION: dict[str, dict[str, str]] = {
+    "trust":              {"template_single": "__Single - Trust.docx"},
+    "certificate_of_trust": {"template_single": "__Single - Certificate of Trust.docx"},
+    "pourover_will":      {"template_single": "__Single - Pourover Will.docx"},
+    "hc_poa":             {"template_single": "__Single - HC POA.docx"},
+    "general_poa":        {"template_single": "__Single - General POA.docx"},
+    "living_will":        {"template_single": "__Single - Living Will.docx",
+                          "template_joint":  "__Married - Living Will.docx"},
+    "closing_letter":     {"template_single": "__Single - Closing Summary Letter.docx"},
+}
 
 
 def seed_document_types(db: Session) -> None:
-    """Insert seed data if table is empty, then backfill matter_type on existing rows."""
+    """Insert seed data if table is empty, then run migrations on existing rows."""
     if db.query(DocumentType).count() == 0:
         for item in SEED_DATA:
             db.add(DocumentType(
@@ -173,22 +178,33 @@ def seed_document_types(db: Session) -> None:
                 matter_type=item["matter_type"],
                 clio_field_id=item.get("clio_field_id"),
                 template_default=item.get("template_default"),
-                template_single_male=item.get("template_single_male"),
-                template_single_female=item.get("template_single_female"),
-                template_joint_male=item.get("template_joint_male"),
-                template_joint_female=item.get("template_joint_female"),
+                template_single=item.get("template_single"),
+                template_joint=item.get("template_joint"),
                 sort_order=item["sort_order"],
                 active=True,
             ))
         db.commit()
     else:
-        # Backfill matter_type on any existing rows still set to default "estate_planning"
-        # This handles the upgrade case where the column was just added.
         changed = False
         for dt in db.query(DocumentType).all():
-            canonical = MATTER_TYPE_BACKFILL.get(dt.wizard_key)
-            if canonical and dt.matter_type != canonical:
-                dt.matter_type = canonical
+            # Backfill matter_type
+            canonical_type = MATTER_TYPE_BACKFILL.get(dt.wizard_key)
+            if canonical_type and dt.matter_type != canonical_type:
+                dt.matter_type = canonical_type
                 changed = True
+
+            # Migrate: if template_single is not set but one of the old gendered columns is,
+            # copy the value across. SQLAlchemy will ignore unknown attributes gracefully.
+            if not dt.template_single:
+                migration = _GENDER_MIGRATION.get(dt.wizard_key, {})
+                new_single = migration.get("template_single")
+                new_joint = migration.get("template_joint")
+                if new_single:
+                    dt.template_single = new_single
+                    changed = True
+                if new_joint and not dt.template_joint:
+                    dt.template_joint = new_joint
+                    changed = True
+
         if changed:
             db.commit()

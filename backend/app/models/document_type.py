@@ -29,12 +29,10 @@ class DocumentType(Base):
     clio_field_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Template filenames per variant. NULL = no template assigned yet.
-    # For gender/structure variants we store each separately.
-    template_single_male: Mapped[str | None] = mapped_column(Text, nullable=True)
-    template_single_female: Mapped[str | None] = mapped_column(Text, nullable=True)
-    template_joint_male: Mapped[str | None] = mapped_column(Text, nullable=True)
-    template_joint_female: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Some docs have only one template regardless of gender/structure
+    # Two structure variants + a catch-all default.
+    # is_female / pronouns are handled inside the template via Jinja2 conditionals.
+    template_single: Mapped[str | None] = mapped_column(Text, nullable=True)
+    template_joint: Mapped[str | None] = mapped_column(Text, nullable=True)
     template_default: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Display order in the wizard (lower = first)
@@ -43,10 +41,10 @@ class DocumentType(Base):
     # Whether this doc type is active/visible in the wizard
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    def get_template(self, structure: str = "single", is_female: bool = False) -> str | None:
-        """Return the best-matching template filename for the given structure/gender."""
-        if self.template_default:
-            return self.template_default
-        if structure == "joint":
-            return self.template_joint_female if is_female else self.template_joint_male
-        return self.template_single_female if is_female else self.template_single_male
+    def get_template(self, structure: str = "single") -> str | None:
+        """Return the best-matching template filename for the given structure."""
+        if structure == "joint" and self.template_joint:
+            return self.template_joint
+        if self.template_single:
+            return self.template_single
+        return self.template_default
