@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, FileDown, Loader2, Check } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileDown, Loader2, Check, Search, X } from "lucide-react";
 import { ContactPanel } from "@/components/wizard/contact-panel";
+import { searchContacts, type ContactCard } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 // Clio document checkbox field IDs → wizard_key mapping
@@ -54,13 +55,17 @@ type WizardData = {
   rate_key: string;
 };
 
-const RATE_TYPE_DESCRIPTIONS: Record<string, string> = {
-  flat_joint_trust: "a flat fee of {amount} for a joint trust-based estate plan",
-  flat_individual_trust: "a flat fee of {amount} for an individual trust-based estate plan",
-  flat_joint_will: "a flat fee of {amount} for a joint will-based estate plan including a beneficiary deed",
-  flat_individual_will: "a flat fee of {amount} for an individual will-based estate plan including a beneficiary deed",
-  hourly: "an hourly basis at the rate of {amount} per hour",
-};
+const RATE_TYPES = [
+  { key: "flat_joint_trust",      label: "Flat Rate — Joint Trust Estate Plan",         description: "a flat fee of {amount} for a joint trust-based estate plan" },
+  { key: "flat_individual_trust", label: "Flat Rate — Individual Trust Estate Plan",     description: "a flat fee of {amount} for an individual trust-based estate plan" },
+  { key: "flat_joint_will",       label: "Flat Rate — Joint Will & Beneficiary Deed",    description: "a flat fee of {amount} for a joint will-based estate plan including a beneficiary deed" },
+  { key: "flat_individual_will",  label: "Flat Rate — Individual Will & Beneficiary Deed", description: "a flat fee of {amount} for an individual will-based estate plan including a beneficiary deed" },
+  { key: "hourly",                label: "Hourly Rate",                                  description: "an hourly basis at the rate of {amount} per hour" },
+];
+
+function rateLabel(key: string) {
+  return RATE_TYPES.find((r) => r.key === key)?.label ?? key;
+}
 
 // Steps appear in this fixed order when the corresponding document is selected.
 // Each entry: [step_name, wizard_key_that_triggers_it]
@@ -208,7 +213,7 @@ async function handleGenerate() {
       attorney_rate: data.rate_key && firmRates ? (firmRates[data.rate_key] ?? "") : "",
       rate_type: data.rate_key,
       rate_description: data.rate_key && firmRates
-        ? (RATE_TYPE_DESCRIPTIONS[data.rate_key] ?? "").replace("{amount}", firmRates[data.rate_key] ?? "")
+        ? (RATE_TYPES.find((r) => r.key === data.rate_key)?.description ?? "").replace("{amount}", firmRates[data.rate_key] ?? "")
         : "",
     };
 
@@ -349,10 +354,101 @@ async function handleGenerate() {
 
 // --- Setup Step ---
 
+function PrimaryClientSearch({
+  value,
+  onChange,
+}: {
+  value: WizardData["client"];
+  onChange: (c: WizardData["client"]) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<ContactCard[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (query.length < 2) { setResults([]); return; }
+    const timeout = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const r = await searchContacts(query);
+        setResults(r.data);
+      } catch { setResults([]); }
+      finally { setSearching(false); }
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [query]);
+
+  function select(c: ContactCard) {
+    onChange({ id: c.id, name: c.name, first_name: c.first_name, last_name: c.last_name, prefix: c.prefix });
+    setQuery("");
+    setResults([]);
+    setOpen(false);
+  }
+
+  if (value) {
+    return (
+      <div className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-900 bg-slate-50">
+        <div>
+          <p className="text-sm font-medium text-slate-900">{value.name}</p>
+          {value.prefix && <p className="text-xs text-slate-400">{value.prefix}</p>}
+        </div>
+        <button onClick={() => onChange(null)} className="text-slate-400 hover:text-slate-600 transition-colors">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+        <Input
+          className="pl-9"
+          placeholder="Search by name..."
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+        />
+        {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-slate-400" />}
+      </div>
+      {open && results.length > 0 && (
+        <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+          {results.map((c) => (
+            <button key={c.id} onClick={() => select(c)}
+              className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0">
+              <span className="font-medium text-slate-900">{c.name}</span>
+              {c.email && <span className="text-slate-400 ml-2">{c.email}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      {open && query.length >= 2 && !searching && results.length === 0 && (
+        <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow px-4 py-3 text-sm text-slate-400">
+          No contacts found.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StepSetup({ data, update, matterId }: { data: WizardData; update: Function; matterId: number }) {
   return (
     <div className="space-y-6">
       <h2 className="text-lg font-medium text-slate-900">Estate Setup</h2>
+
+      {/* Primary Client */}
+      <div>
+        <Label className="text-sm mb-1 block">Primary Client</Label>
+        <p className="text-xs text-slate-400 mb-2">
+          This person's name and address will appear on all generated documents.
+        </p>
+        <PrimaryClientSearch
+          value={data.client}
+          onChange={(c) => update("client", c)}
+        />
+      </div>
 
       {/* Estate structure */}
       <div>
@@ -408,7 +504,7 @@ function StepSetup({ data, update, matterId }: { data: WizardData; update: Funct
       <div>
         <Label className="text-sm mb-1 block">Matter Contacts</Label>
         <p className="text-xs text-slate-400 mb-3">
-          Add everyone involved in this estate. Link them to Clio and they will be available for document roles.
+          Add everyone involved in this estate. These contacts are available for document roles.
         </p>
         <ContactPanel matterId={matterId} />
       </div>
@@ -556,11 +652,15 @@ function StepReview({
         </ReviewSection>
 
         <ReviewSection title="Setup">
-          <ReviewRow label="Structure" value={data.structure} />
+          {data.client
+            ? <ReviewRow label="Primary Client" value={data.client.name} />
+            : <ReviewRow label="Primary Client" value="Not selected" warn />
+          }
+          <ReviewRow label="Structure" value={data.structure === "single" ? "Single" : "Joint"} />
           <ReviewRow label="Pronouns" value={data.is_female ? "She/Her" : "He/Him"} />
-          {data.trust_name && <ReviewRow label="Trust name" value={data.trust_name} />}
+          {data.trust_name && <ReviewRow label="Trust Name" value={data.trust_name} />}
           {data.rate_key && (
-            <ReviewRow label="Fee structure" value={data.rate_key.replace(/_/g, " ")} />
+            <ReviewRow label="Fee Structure" value={rateLabel(data.rate_key)} />
           )}
         </ReviewSection>
 
@@ -584,11 +684,6 @@ function StepReview({
         </ReviewSection>
       </div>
 
-      {!data.client && (
-        <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-700">
-          Note: No primary client selected — client name will be blank in documents. Add a client contact in Setup.
-        </div>
-      )}
     </div>
   );
 }
@@ -623,13 +718,7 @@ function StepEngagementLetter({
   update: Function;
   firmRates: Record<string, string>;
 }) {
-  const rateTypes = [
-    { key: "flat_joint_trust", label: "Joint Trust Estate Plan" },
-    { key: "flat_individual_trust", label: "Individual Trust Estate Plan" },
-    { key: "flat_joint_will", label: "Joint Will & Beneficiary Deed" },
-    { key: "flat_individual_will", label: "Individual Will & Beneficiary Deed" },
-    { key: "hourly", label: "Hourly Rate" },
-  ];
+  const rateTypes = RATE_TYPES;
 
   return (
     <div className="space-y-5">
