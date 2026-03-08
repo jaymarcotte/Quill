@@ -90,6 +90,7 @@ export const createQuillField = (data: Partial<QuillFieldDef>) => api.post<{ dat
 export const updateQuillField = (id: number, data: Partial<QuillFieldDef>) => api.patch<{ data: QuillFieldDef }>(`/fields/quill/${id}`, data);
 export const deleteQuillField = (id: number) => api.delete(`/fields/quill/${id}`);
 export const listClioFields = () => api.get<{ data: ClioFieldDef[] }>("/fields/clio");
+export const listClioStandardFields = () => api.get<{ data: ClioStandardFieldDef[] }>("/fields/clio-standard");
 
 // --- Templates ---
 export const listTemplates = () => api.get("/templates");
@@ -122,12 +123,14 @@ export interface Matter {
   description: string;
   status: string;
   client?: { id: number; name: string };
+  custom_field_values?: { field_name?: string; value?: unknown }[];
 }
 
 export interface GenerateRequest {
   matter_id: number;
   matter_label: string;
-  document_type: string;
+  wizard_key: string;
+  structure: "single" | "joint";
   wizard_data: Record<string, unknown>;
   generate_pdf?: boolean;
   upload_to_clio?: boolean;
@@ -163,6 +166,7 @@ export interface ContactCard {
 export interface ContactFull extends ContactCard {
   etag: string;
   street: string;
+  city: string;
   province: string;
   postal_code: string;
   middle_name: string;
@@ -197,4 +201,14 @@ export interface ClioFieldDef {
   variable_name: string;
   template_syntax: string;
   picklist_options: string[];
+}
+
+export interface ClioStandardFieldDef {
+  id: string;
+  name: string;
+  group: string;
+  field_type: string;
+  source: "contact" | "matter" | "system";
+  variable_name: string;
+  template_syntax: string;
 }

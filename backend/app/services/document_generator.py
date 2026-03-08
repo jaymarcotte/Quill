@@ -134,29 +134,26 @@ def build_context(document_type: str, wizard_data: dict) -> dict:
     return ctx
 
 
-def generate_docx(document_type: str, wizard_data: dict, output_filename: str) -> str:
+def generate_docx(template_filename: str, wizard_data: dict, output_filename: str) -> str:
     """
     Render a template with wizard data and write the output .docx.
+    template_filename is the bare filename (e.g. '__Single - Trust.docx'), not a type key.
     Returns the full path to the generated file.
     """
-    template_name = TEMPLATE_MAP.get(document_type)
-    if not template_name:
-        raise ValueError(f"Unknown document type: {document_type}")
-
-    template_path = os.path.join(settings.templates_dir, template_name)
+    template_path = os.path.join(settings.templates_dir, template_filename)
     if not os.path.exists(template_path):
         raise FileNotFoundError(f"Template not found: {template_path}")
 
     os.makedirs(settings.output_dir, exist_ok=True)
     output_path = os.path.join(settings.output_dir, output_filename)
 
-    ctx = build_context(document_type, wizard_data)
+    ctx = build_context(template_filename, wizard_data)
 
     tpl = DocxTemplate(template_path)
     tpl.render(ctx)
     tpl.save(output_path)
 
-    logger.info(f"Generated {document_type} -> {output_path}")
+    logger.info(f"Generated {template_filename} -> {output_path}")
     return output_path
 
 

@@ -114,6 +114,60 @@ async def delete_quill_field(
     return {"status": "ok"}
 
 
+# --- Clio Standard Fields (hardcoded, read-only) ---
+
+# Standard Clio API fields available on every matter/contact without custom fields.
+CLIO_STANDARD_FIELDS = [
+    # Contact fields
+    {"group": "Contact", "name": "Full Name", "variable_name": "client_name", "source": "contact", "field_type": "text"},
+    {"group": "Contact", "name": "First Name", "variable_name": "client_first_name", "source": "contact", "field_type": "text"},
+    {"group": "Contact", "name": "Last Name", "variable_name": "client_last_name", "source": "contact", "field_type": "text"},
+    {"group": "Contact", "name": "Name Prefix (Mr./Ms./Dr.)", "variable_name": "client_prefix", "source": "contact", "field_type": "text"},
+    {"group": "Contact", "name": "Email Address", "variable_name": "client_email", "source": "contact", "field_type": "email"},
+    {"group": "Contact", "name": "Phone Number", "variable_name": "client_phone", "source": "contact", "field_type": "phone"},
+    {"group": "Contact", "name": "Address — Street", "variable_name": "client_address_street", "source": "contact", "field_type": "text"},
+    {"group": "Contact", "name": "Address — City", "variable_name": "client_address_city", "source": "contact", "field_type": "text"},
+    {"group": "Contact", "name": "Address — State", "variable_name": "client_address_state", "source": "contact", "field_type": "text"},
+    {"group": "Contact", "name": "Address — Zip", "variable_name": "client_address_zip", "source": "contact", "field_type": "text"},
+    # Spouse / Joint fields (second contact on matter)
+    {"group": "Spouse / Joint", "name": "Spouse Full Name", "variable_name": "spouse_name", "source": "contact", "field_type": "text"},
+    {"group": "Spouse / Joint", "name": "Spouse First Name", "variable_name": "spouse_first_name", "source": "contact", "field_type": "text"},
+    {"group": "Spouse / Joint", "name": "Spouse Last Name", "variable_name": "spouse_last_name", "source": "contact", "field_type": "text"},
+    {"group": "Spouse / Joint", "name": "Spouse Email", "variable_name": "spouse_email", "source": "contact", "field_type": "email"},
+    {"group": "Spouse / Joint", "name": "Spouse Phone", "variable_name": "spouse_phone", "source": "contact", "field_type": "phone"},
+    # Matter fields
+    {"group": "Matter", "name": "Matter Number", "variable_name": "matter_number", "source": "matter", "field_type": "text"},
+    {"group": "Matter", "name": "Matter Description", "variable_name": "matter_description", "source": "matter", "field_type": "text"},
+    {"group": "Matter", "name": "Matter Status", "variable_name": "matter_status", "source": "matter", "field_type": "text"},
+    {"group": "Matter", "name": "Open Date", "variable_name": "matter_open_date", "source": "matter", "field_type": "date"},
+    {"group": "Matter", "name": "Practice Area", "variable_name": "matter_practice_area", "source": "matter", "field_type": "text"},
+    # Firm / Attorney
+    {"group": "Firm", "name": "Attorney Name", "variable_name": "attorney_name", "source": "matter", "field_type": "text"},
+    {"group": "Firm", "name": "Firm Name", "variable_name": "firm_name", "source": "matter", "field_type": "text"},
+    {"group": "Firm", "name": "Today's Date", "variable_name": "today_date", "source": "system", "field_type": "date"},
+    {"group": "Firm", "name": "Document Date (long form)", "variable_name": "doc_date_long", "source": "system", "field_type": "text"},
+]
+
+
+@router.get("/clio-standard")
+async def list_clio_standard_fields(
+    current_user: User = Depends(get_current_user),
+):
+    """Return the hardcoded standard Clio/system fields available in all templates."""
+    result = []
+    for i, f in enumerate(CLIO_STANDARD_FIELDS):
+        result.append({
+            "id": f"std_{i}",
+            "name": f["name"],
+            "group": f["group"],
+            "field_type": f["field_type"],
+            "source": f["source"],
+            "variable_name": f["variable_name"],
+            "template_syntax": f"{{{{ {f['variable_name']} }}}}",
+        })
+    return {"data": result}
+
+
 # --- Clio Fields (read-only, live from Clio API) ---
 
 @router.get("/clio")

@@ -111,64 +111,41 @@ export default function WizardPage() {
     }));
   }
 
-  function resolveDocumentType(wizardKey: string, types: DocType[]): string | null {
-    const dt = types.find((t) => t.wizard_key === wizardKey);
-    if (!dt) return null;
-    // Build the backend key — for living_will we use married/single, others use single
-    const structure = wizardKey === "living_will" && data.structure === "joint" ? "joint" : "single";
-    const gender = data.is_female ? "female" : "male";
-    // Check which variant is available
-    const variantKey = `template_${structure}_${gender}` as keyof DocType;
-    if (dt[variantKey]) return `${wizardKey}_${structure}_${gender}`;
-    if (dt.template_default) return wizardKey;
-    // Fall back to any non-null variant
-    const fallback = (["single_male","single_female","joint_male","joint_female","default"] as const)
-      .find((v) => dt[`template_${v}` as keyof DocType]);
-    return fallback ? `${wizardKey}_${fallback}` : wizardKey;
-  }
-
-  async function handleGenerate() {
+async function handleGenerate() {
     if (!matter || !data.client) return;
     if (data.selected_documents.length === 0) { toast.error("No documents selected."); return; }
-    if (!docTypes) return;
-
     setIsGenerating(true);
     const matterLabel = `${matter.display_number} - ${matter.description}`;
+    const wizardPayload = {
+      client: {
+        name: data.client.name,
+        first_name: data.client.first_name,
+        last_name: data.client.last_name,
+        prefix: data.client.prefix,
+      },
+      is_female: data.is_female,
+      include_pregnancy_clause: data.include_pregnancy_clause,
+      trust_name: data.trust_name,
+      selected_documents: data.selected_documents,
+    };
 
-    const requests = data.selected_documents
-      .map((key) => {
-        const docType = resolveDocumentType(key, docTypes);
-        if (!docType) return null;
-        return {
-          key,
-          docType,
-          payload: {
-            matter_id: matter.id,
-            matter_label: matterLabel,
-            document_type: docType,
-            wizard_data: {
-              client: {
-                name: data.client!.name,
-                first_name: data.client!.first_name,
-                last_name: data.client!.last_name,
-                prefix: data.client!.prefix,
-              },
-              is_female: data.is_female,
-              include_pregnancy_clause: data.include_pregnancy_clause,
-              trust_name: data.trust_name,
-              selected_documents: data.selected_documents,
-            },
-            generate_pdf: true,
-            upload_to_clio: false,
-          },
-        };
-      })
-      .filter(Boolean) as { key: string; docType: string; payload: Parameters<typeof generateDocument>[0] }[];
+    const requests = data.selected_documents.map((wizard_key) => ({
+      wizard_key,
+      payload: {
+        matter_id: matter.id,
+        matter_label: matterLabel,
+        wizard_key,
+        structure: data.structure,
+        wizard_data: wizardPayload,
+        generate_pdf: true,
+        upload_to_clio: false,
+      } as Parameters<typeof generateDocument>[0],
+    }));
 
     const results = await Promise.allSettled(requests.map((r) => generateDocument(r.payload)));
     let successCount = 0;
     results.forEach((result, idx) => {
-      const label = docTypes.find((d) => d.wizard_key === requests[idx].key)?.label ?? requests[idx].key;
+      const label = (docTypes ?? []).find((d) => d.wizard_key === requests[idx].wizard_key)?.label ?? requests[idx].wizard_key;
       if (result.status === "fulfilled") {
         successCount++;
         toast.success(`${label} generated`, {

@@ -45,7 +45,6 @@ export default function TemplatesPage() {
   });
 
   const [search, setSearch] = useState("");
-  const [filterType, setFilterType] = useState<string>("__all");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editLabel, setEditLabel] = useState("");
   const [showAdd, setShowAdd] = useState(false);
@@ -74,11 +73,9 @@ export default function TemplatesPage() {
   if (isLoading) return <div className="p-8 text-slate-400">Loading...</div>;
 
   const allTypes = data ?? [];
-  const filtered = allTypes.filter((dt) => {
-    const matchSearch = !search || dt.label.toLowerCase().includes(search.toLowerCase()) || dt.wizard_key.includes(search.toLowerCase());
-    const matchType = filterType === "__all" || dt.matter_type === filterType;
-    return matchSearch && matchType;
-  });
+  const filtered = allTypes.filter((dt) =>
+    !search || dt.label.toLowerCase().includes(search.toLowerCase()) || dt.wizard_key.includes(search.toLowerCase())
+  );
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
@@ -92,42 +89,14 @@ export default function TemplatesPage() {
         </Button>
       </div>
 
-      {/* Filter bar */}
-      <div className="flex items-center gap-2 mb-4">
+      {/* Search */}
+      <div className="mb-4">
         <Input
-          placeholder="Search..."
+          placeholder="Search document types..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="h-8 text-sm w-48"
+          className="h-8 text-sm w-64"
         />
-        {/* All button */}
-        <button
-          onClick={() => setFilterType("__all")}
-          className={cn("h-8 px-3 rounded-md text-sm border transition-colors",
-            filterType === "__all" ? "bg-slate-900 text-white border-slate-900" : "border-slate-200 text-slate-600 hover:border-slate-400")}
-        >
-          All ({allTypes.length})
-        </button>
-        {/* Practice area buttons */}
-        {MATTER_TYPES.filter((m) => m.value !== "all").map((mt) => {
-          const count = allTypes.filter((dt) => dt.matter_type === mt.value).length;
-          const active = filterType === mt.value;
-          return (
-            <button key={mt.value} onClick={() => setFilterType(mt.value)}
-              className={cn("h-8 px-3 rounded-md text-sm border transition-colors",
-                active ? "bg-slate-900 text-white border-slate-900" : "border-slate-200 text-slate-600 hover:border-slate-400")}>
-              {mt.label} ({count})
-            </button>
-          );
-        })}
-        {/* "All types" option */}
-        <button
-          onClick={() => setFilterType("all")}
-          className={cn("h-8 px-3 rounded-md text-sm border transition-colors",
-            filterType === "all" ? "bg-slate-900 text-white border-slate-900" : "border-slate-200 text-slate-600 hover:border-slate-400")}
-        >
-          All Types ({allTypes.filter((dt) => dt.matter_type === "all").length})
-        </button>
       </div>
 
       {showAdd && (

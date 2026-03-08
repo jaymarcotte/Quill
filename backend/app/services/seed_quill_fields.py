@@ -1,40 +1,34 @@
-"""Seed Quill custom fields — all variables currently in document_generator.py build_context()."""
+"""
+Seed Quill Blocks — complex/conditional variables that have no direct Clio equivalent.
+These are NOT simple contact or matter fields; those live in Clio Standard or Clio Custom.
+Quill Blocks are: conditional paragraphs, agent/trustee lists, computed text, flags, etc.
+"""
 from sqlalchemy.orm import Session
 from app.models.quill_field import QuillField
 
-SEED_DATA = [
-    # --- Client ---
-    {"variable_name": "client_name", "label": "Client Full Name", "category": "Client",
-     "applies_to": "all", "example": "Jay Marcotte",
-     "description": "Client 1 full display name from Clio contact.", "sort_order": 10},
-    {"variable_name": "client_first_name", "label": "Client First Name", "category": "Client",
-     "applies_to": "all", "example": "Jay", "sort_order": 20},
-    {"variable_name": "client_last_name", "label": "Client Last Name", "category": "Client",
-     "applies_to": "all", "example": "Marcotte", "sort_order": 30},
-    {"variable_name": "client_prefix", "label": "Client Prefix", "category": "Client",
-     "applies_to": "all", "example": "Mr.", "sort_order": 40},
-    {"variable_name": "client_email", "label": "Client Email", "category": "Client",
-     "applies_to": "all", "example": "jay@jlmarcotte.com", "sort_order": 50},
-    {"variable_name": "client_address", "label": "Client Full Address (block)", "category": "Client",
-     "applies_to": "all", "example": "1717 E Morten Ave\nPhoenix, AZ 85020",
-     "description": "Multi-line address block.", "sort_order": 60},
-    {"variable_name": "client_address_street", "label": "Client Street", "category": "Client",
-     "applies_to": "all", "example": "1717 E Morten Ave, Unit 24", "sort_order": 70},
-    {"variable_name": "client_address_city", "label": "Client City", "category": "Client",
-     "applies_to": "all", "example": "Phoenix", "sort_order": 80},
-    {"variable_name": "client_address_state", "label": "Client State", "category": "Client",
-     "applies_to": "all", "example": "AZ", "sort_order": 90},
-    {"variable_name": "client_address_zip", "label": "Client ZIP", "category": "Client",
-     "applies_to": "all", "example": "85020", "sort_order": 100},
-    {"variable_name": "is_female", "label": "Client is Female (boolean)", "category": "Client",
-     "applies_to": "all", "example": "true / false",
-     "description": "Use with {% if is_female %} blocks for pronoun-sensitive language.", "sort_order": 110},
+# Variable names that belong to Clio Standard — purge if they were incorrectly seeded here.
+CLIO_STANDARD_VARIABLE_NAMES = {
+    "client_name", "client_first_name", "client_last_name", "client_prefix",
+    "client_email", "client_phone",
+    "client_address_street", "client_address_city", "client_address_state", "client_address_zip",
+    "spouse_name", "spouse_first_name", "spouse_last_name", "spouse_email", "spouse_phone",
+    "matter_number", "matter_description", "matter_status", "matter_open_date", "matter_practice_area",
+    "attorney_name", "firm_name", "today_date", "doc_date_long",
+    # alias that duplicates client_name
+    "client_matter_name",
+}
 
-    # --- Joint / Spouse ---
+SEED_DATA = [
+    # --- Joint / Spouse (wizard-computed, not raw Clio fields) ---
     {"variable_name": "husband_name", "label": "Husband / Client 2 Name", "category": "Joint",
-     "applies_to": "trust,pourover_will,closing_letter", "example": "James Smith", "sort_order": 10},
+     "applies_to": "trust,pourover_will,closing_letter", "example": "James Smith",
+     "description": "Wizard-resolved name of the spouse/second client.", "sort_order": 10},
     {"variable_name": "wife_name", "label": "Wife / Client 1 Name (joint)", "category": "Joint",
-     "applies_to": "trust,pourover_will,closing_letter", "example": "Jane Smith", "sort_order": 20},
+     "applies_to": "trust,pourover_will,closing_letter", "example": "Jane Smith",
+     "description": "Wizard-resolved name of the primary client in a joint matter.", "sort_order": 20},
+    {"variable_name": "is_female", "label": "Client is Female (boolean)", "category": "Joint",
+     "applies_to": "all", "example": "true / false",
+     "description": "Use with {% if is_female %} blocks for pronoun-sensitive language.", "sort_order": 30},
 
     # --- Trust ---
     {"variable_name": "trust_name", "label": "Trust Name", "category": "Trust",
@@ -62,6 +56,10 @@ SEED_DATA = [
      "applies_to": "trust",
      "description": "List of beneficiary dicts. Use with {% for b in beneficiaries %}.",
      "example": "[{name: 'Kenzee', share: '50%'}]", "sort_order": 100},
+    {"variable_name": "client_address", "label": "Full Address Block (multi-line)", "category": "Trust",
+     "applies_to": "all",
+     "description": "Wizard-assembled multi-line address block (street, city, state, zip).",
+     "example": "1717 E Morten Ave\nPhoenix, AZ 85020", "sort_order": 110},
 
     # --- Health Care POA ---
     {"variable_name": "hc_agent_1", "label": "HC Agent 1 (Primary)", "category": "HC POA",
@@ -93,10 +91,10 @@ SEED_DATA = [
      "description": "Use with {% if poa_has_co_agents %} blocks.", "sort_order": 70},
 
     # --- Living Will ---
-    {"variable_name": "pregnancy_clause", "label": "Pregnancy Clause (legacy)", "category": "Living Will",
+    {"variable_name": "pregnancy_clause", "label": "Pregnancy Clause", "category": "Living Will",
      "applies_to": "living_will",
-     "description": "Legacy variable — always empty string. Use {% if is_female %} block in template instead.",
-     "example": "", "sort_order": 10},
+     "description": "Conditional paragraph — rendered only for female clients via {% if is_female %} in template.",
+     "example": "In the event of pregnancy...", "sort_order": 10},
 
     # --- Closing Letter ---
     {"variable_name": "has_brokerage", "label": "Has Brokerage Account (boolean)", "category": "Closing",
@@ -114,7 +112,7 @@ SEED_DATA = [
     {"variable_name": "attorney_rate", "label": "Attorney Rate / Fee", "category": "Engagement",
      "applies_to": "engagement_letter", "example": "$3,500 flat fee", "sort_order": 10},
 
-    # --- System ---
+    # --- System (computed at generation time) ---
     {"variable_name": "date_verbose", "label": "Date (verbose)", "category": "System",
      "applies_to": "all", "example": "March 8, 2026",
      "description": "Auto-generated at document creation time.", "sort_order": 10},
@@ -125,16 +123,28 @@ SEED_DATA = [
      "applies_to": "closing_letter,engagement_letter",
      "description": "List of wizard_key strings for selected docs. Use in closing/engagement letter loops.",
      "example": "['trust','hc_poa','living_will']", "sort_order": 30},
-    {"variable_name": "client_matter_name", "label": "Client Matter Name (alias)", "category": "System",
-     "applies_to": "all", "example": "Jay Marcotte",
-     "description": "Alias for client_name — used in some signature block templates.", "sort_order": 40},
 ]
 
 
 def seed_quill_fields(db: Session) -> None:
-    """Insert seed data if table is empty."""
-    if db.query(QuillField).count() > 0:
-        return
+    """
+    Seed Quill blocks, purging any rows that were incorrectly seeded
+    with Clio Standard variable names (client_name, etc.).
+    """
+    # 1. Purge any incorrectly seeded Clio Standard variables
+    purged = (
+        db.query(QuillField)
+        .filter(QuillField.variable_name.in_(CLIO_STANDARD_VARIABLE_NAMES))
+        .all()
+    )
+    if purged:
+        for row in purged:
+            db.delete(row)
+        db.commit()
+
+    # 2. Seed missing rows
+    existing_keys = {f.variable_name for f in db.query(QuillField).all()}
     for item in SEED_DATA:
-        db.add(QuillField(**item))
+        if item["variable_name"] not in existing_keys:
+            db.add(QuillField(**item))
     db.commit()

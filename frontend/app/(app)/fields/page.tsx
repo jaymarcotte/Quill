@@ -1,190 +1,422 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listQuillFields, createQuillField, updateQuillField, deleteQuillField,
-  listClioFields,
-  type QuillFieldDef, type ClioFieldDef,
+  listClioFields, listClioStandardFields,
+  type QuillFieldDef, type ClioFieldDef, type ClioStandardFieldDef,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Copy, Plus, Pencil, Trash2, X, Check, ChevronDown, ChevronRight } from "lucide-react";
+import { Copy, Plus, Pencil, Trash2, X, Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const CATEGORIES = ["Client", "Joint", "Trust", "HC POA", "General POA", "Living Will", "Closing", "Engagement", "System", "General"];
+const QUILL_CATEGORIES = ["Client", "Joint", "Trust", "HC POA", "General POA", "Living Will", "Closing", "Engagement", "System", "General"];
+
+type Tab = "clio_standard" | "clio_custom" | "quill_blocks";
 
 export default function FieldsPage() {
-  const [activeTab, setActiveTab] = useState<"quill" | "clio">("quill");
+  const [activeTab, setActiveTab] = useState<Tab>("clio_standard");
+
+  const TABS: { key: Tab; label: string; description: string }[] = [
+    {
+      key: "clio_standard",
+      label: "Clio Standard",
+      description: "Built-in Clio fields on every matter and contact — name, address, phone, matter number, etc.",
+    },
+    {
+      key: "clio_custom",
+      label: "Clio Custom",
+      description: "Hillary's custom fields in Clio — checkboxes, dates, and text fields added to contacts and matters.",
+    },
+    {
+      key: "quill_blocks",
+      label: "Quill Blocks",
+      description: "Complex text blocks and conditional variables that have no direct Clio equivalent — trustee lists, agent structures, pregnancy clause, etc.",
+    },
+  ];
+
+  const activeInfo = TABS.find((t) => t.key === activeTab)!;
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-slate-900">Field Reference</h1>
         <p className="text-sm text-slate-500 mt-1">
-          All variables available in Word templates. Copy the syntax and paste it directly into your .docx file.
+          All variables available in Word templates. Click any syntax pill to copy it, then paste into your .docx file.
         </p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-slate-100 rounded-lg p-1 w-fit">
-        {(["quill", "clio"] as const).map((tab) => (
-          <button key={tab} onClick={() => setActiveTab(tab)}
+      <div className="flex gap-1 mb-2 bg-slate-100 rounded-lg p-1 w-fit">
+        {TABS.map((tab) => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             className={cn("px-4 py-1.5 rounded-md text-sm font-medium transition-colors",
-              activeTab === tab ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700")}>
-            {tab === "quill" ? "Quill Fields" : "Clio Fields"}
+              activeTab === tab.key ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700")}>
+            {tab.label}
           </button>
         ))}
       </div>
+      <p className="text-xs text-slate-400 mb-5">{activeInfo.description}</p>
 
-      {activeTab === "quill" ? <QuillFieldsTab /> : <ClioFieldsTab />}
+      {activeTab === "clio_standard" && <ClioStandardTab />}
+      {activeTab === "clio_custom" && <ClioCustomTab />}
+      {activeTab === "quill_blocks" && <QuillBlocksTab />}
     </div>
   );
 }
 
 
-// --- Quill Fields Tab ---
+// ─── Shared toolbar: Search + All pill + Filter dropdown ──────────────────────
 
-function QuillFieldsTab() {
+function FieldToolbar({
+  search, onSearch,
+  filterValue, onFilter,
+  filterOptions, // [{ value, label, count }]
+  totalShown, totalAll,
+  rightSlot,
+}: {
+  search: string;
+  onSearch: (v: string) => void;
+  filterValue: string;
+  onFilter: (v: string) => void;
+  filterOptions: { value: string; label: string; count: number }[];
+  totalShown: number;
+  totalAll: number;
+  rightSlot?: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const activeOption = filterOptions.find((o) => o.value === filterValue);
+
+  return (
+    <div className="flex items-center gap-2">
+      <Input
+        placeholder="Search fields..."
+        value={search}
+        onChange={(e) => onSearch(e.target.value)}
+        className="h-8 text-sm w-60"
+      />
+
+      {/* All pill */}
+      <button
+        onClick={() => onFilter("all")}
+        className={cn("h-8 px-3 rounded-md text-sm font-medium border transition-colors",
+          filterValue === "all"
+            ? "bg-slate-900 text-white border-slate-900"
+            : "border-slate-200 text-slate-600 hover:border-slate-400"
+        )}>
+        All ({totalAll})
+      </button>
+
+      {/* Filter dropdown */}
+      <div className="relative" ref={ref}>
+        <button
+          onClick={() => setOpen((s) => !s)}
+          className={cn(
+            "h-8 px-3 rounded-md text-sm font-medium border flex items-center gap-1.5 transition-colors",
+            filterValue !== "all"
+              ? "bg-slate-900 text-white border-slate-900"
+              : "border-slate-200 text-slate-600 hover:border-slate-400"
+          )}>
+          {filterValue !== "all" && activeOption ? activeOption.label : "Filter"}
+          <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+        </button>
+        {open && (
+          <div className="absolute z-20 top-full left-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg py-1 w-52 max-h-72 overflow-y-auto">
+            {filterOptions.map((opt) => (
+              <button key={opt.value}
+                onClick={() => { onFilter(opt.value); setOpen(false); }}
+                className={cn("w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 flex items-center justify-between",
+                  filterValue === opt.value && "font-medium text-slate-900")}>
+                <span>{opt.label}</span>
+                <span className="text-xs text-slate-400">{opt.count}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <span className="text-xs text-slate-400 ml-1">{totalShown} shown</span>
+      {rightSlot && <div className="ml-auto">{rightSlot}</div>}
+    </div>
+  );
+}
+
+
+// ─── Copy pill (shared) ───────────────────────────────────────────────────────
+
+function CopyPill({ syntax }: { syntax: string }) {
+  function copy() {
+    navigator.clipboard.writeText(syntax);
+    toast.success("Copied", { description: syntax, duration: 1500 });
+  }
+  return (
+    <button onClick={copy}
+      className="flex items-center gap-1.5 font-mono text-xs bg-slate-800 text-white px-2.5 py-1 rounded-md hover:bg-slate-600 transition-colors shrink-0">
+      {syntax}
+      <Copy className="h-3 w-3 opacity-60" />
+    </button>
+  );
+}
+
+
+// ─── Clio Standard Tab ────────────────────────────────────────────────────────
+
+function ClioStandardTab() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["clio-standard-fields"],
+    queryFn: () => listClioStandardFields().then((r) => r.data.data),
+  });
+  const [search, setSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState("all");
+
+  if (isLoading) return <div className="text-slate-400 text-sm">Loading...</div>;
+
+  const allFields = data ?? [];
+  const groups = Array.from(new Set(allFields.map((f) => f.group)));
+
+  const filtered = allFields.filter((f) => {
+    const matchGroup = groupFilter === "all" || f.group === groupFilter;
+    const matchSearch = !search || f.name.toLowerCase().includes(search.toLowerCase()) || f.variable_name.includes(search.toLowerCase());
+    return matchGroup && matchSearch;
+  });
+
+  const filterOptions = groups.map((g) => ({
+    value: g,
+    label: g,
+    count: allFields.filter((f) => f.group === g).length,
+  }));
+
+  const SOURCE_COLORS: Record<string, string> = {
+    contact: "bg-blue-50 text-blue-600",
+    matter: "bg-purple-50 text-purple-600",
+    system: "bg-amber-50 text-amber-600",
+  };
+
+  return (
+    <div className="space-y-4">
+      <FieldToolbar
+        search={search} onSearch={setSearch}
+        filterValue={groupFilter} onFilter={setGroupFilter}
+        filterOptions={filterOptions}
+        totalShown={filtered.length} totalAll={allFields.length}
+      />
+
+      <div className="rounded-xl border border-slate-200 overflow-hidden">
+        <div className="grid grid-cols-[1fr_auto_auto_auto] text-xs font-semibold text-slate-400 uppercase tracking-wider px-4 py-2 bg-slate-50 border-b border-slate-200 gap-4">
+          <span>Field name</span>
+          <span>Group</span>
+          <span>Source</span>
+          <span>Template syntax</span>
+        </div>
+        <div className="divide-y divide-slate-100 max-h-[60vh] overflow-y-auto">
+          {filtered.map((f) => (
+            <div key={f.id} className="grid grid-cols-[1fr_auto_auto_auto] items-center px-4 py-2.5 hover:bg-slate-50 gap-4">
+              <span className="text-sm text-slate-900">{f.name}</span>
+              <span className="text-xs text-slate-400">{f.group}</span>
+              <Badge variant="secondary" className={cn("text-xs font-normal", SOURCE_COLORS[f.source] ?? "bg-slate-100 text-slate-500")}>
+                {f.source}
+              </Badge>
+              <CopyPill syntax={f.template_syntax} />
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <div className="px-4 py-8 text-sm text-slate-400 text-center">No fields match your search.</div>
+          )}
+        </div>
+      </div>
+      <p className="text-xs text-slate-400">Read only · these fields are always available from Clio and system context.</p>
+    </div>
+  );
+}
+
+
+// ─── Clio Custom Tab ──────────────────────────────────────────────────────────
+
+function ClioCustomTab() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["clio-fields"],
+    queryFn: () => listClioFields().then((r) => r.data.data),
+  });
+  const [search, setSearch] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("all");
+
+  if (isLoading) return <div className="text-slate-400 text-sm">Loading Clio custom fields...</div>;
+
+  const allFields = data ?? [];
+
+  const filtered = allFields.filter((f) => {
+    const matchSource = sourceFilter === "all" || f.source === sourceFilter;
+    const matchSearch = !search || f.name.toLowerCase().includes(search.toLowerCase()) || f.variable_name.includes(search.toLowerCase());
+    return matchSource && matchSearch;
+  });
+
+  const filterOptions = [
+    { value: "contact", label: "Contact fields", count: allFields.filter((f) => f.source === "contact").length },
+    { value: "matter", label: "Matter fields", count: allFields.filter((f) => f.source === "matter").length },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <FieldToolbar
+        search={search} onSearch={setSearch}
+        filterValue={sourceFilter} onFilter={setSourceFilter}
+        filterOptions={filterOptions}
+        totalShown={filtered.length} totalAll={allFields.length}
+      />
+
+      <div className="rounded-xl border border-slate-200 overflow-hidden">
+        <div className="grid grid-cols-[1fr_auto_auto_auto] text-xs font-semibold text-slate-400 uppercase tracking-wider px-4 py-2 bg-slate-50 border-b border-slate-200 gap-4">
+          <span>Field name</span>
+          <span>Type</span>
+          <span>Source</span>
+          <span>Template syntax</span>
+        </div>
+        <div className="divide-y divide-slate-100 max-h-[60vh] overflow-y-auto">
+          {filtered.map((f) => (
+            <div key={f.id} className="grid grid-cols-[1fr_auto_auto_auto] items-center px-4 py-2.5 hover:bg-slate-50 gap-4">
+              <span className="text-sm text-slate-900">{f.name}</span>
+              <span className="text-xs text-slate-400">{f.field_type}</span>
+              <Badge variant="secondary" className={cn("text-xs font-normal",
+                f.source === "contact" ? "bg-blue-50 text-blue-600" : "bg-purple-50 text-purple-600")}>
+                {f.source}
+              </Badge>
+              <CopyPill syntax={f.template_syntax} />
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <div className="px-4 py-8 text-sm text-slate-400 text-center">No fields match your search.</div>
+          )}
+        </div>
+      </div>
+      <p className="text-xs text-slate-400">Read only · pulled live from your connected Clio account. Variable names are auto-generated from the field name.</p>
+    </div>
+  );
+}
+
+
+// ─── Quill Blocks Tab ─────────────────────────────────────────────────────────
+
+function QuillBlocksTab() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["quill-fields"],
     queryFn: () => listQuillFields().then((r) => r.data.data),
   });
-
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set(CATEGORIES));
+  const [search, setSearch] = useState("");
+  const [catFilter, setCatFilter] = useState("all");
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => deleteQuillField(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["quill-fields"] });
-      toast.success("Field removed");
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["quill-fields"] }); toast.success("Block removed"); },
   });
 
   if (isLoading) return <div className="text-slate-400 text-sm">Loading...</div>;
 
-  const fields = data ?? [];
+  const allFields = data ?? [];
+  const activeCats = Array.from(new Set(allFields.map((f) => f.category || "General")));
 
-  // Group by category
-  const grouped = fields.reduce<Record<string, QuillFieldDef[]>>((acc, f) => {
+  const filtered = allFields.filter((f) => {
     const cat = f.category || "General";
-    if (!acc[cat]) acc[cat] = [];
-    acc[cat].push(f);
-    return acc;
-  }, {});
+    const matchCat = catFilter === "all" || cat === catFilter;
+    const matchSearch = !search || f.label.toLowerCase().includes(search.toLowerCase()) || f.variable_name.includes(search.toLowerCase());
+    return matchCat && matchSearch;
+  });
 
-  function toggleCat(cat: string) {
-    setExpandedCats((prev) => {
-      const next = new Set(prev);
-      next.has(cat) ? next.delete(cat) : next.add(cat);
-      return next;
-    });
-  }
+  const filterOptions = activeCats.map((cat) => ({
+    value: cat,
+    label: cat,
+    count: allFields.filter((f) => (f.category || "General") === cat).length,
+  }));
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-500">
-          {fields.length} fields · These variables are filled in by the wizard when generating documents.
-        </p>
-        <Button size="sm" onClick={() => setShowAdd(true)}>
-          <Plus className="h-4 w-4 mr-1.5" /> Add Field
-        </Button>
-      </div>
+      <FieldToolbar
+        search={search} onSearch={setSearch}
+        filterValue={catFilter} onFilter={setCatFilter}
+        filterOptions={filterOptions}
+        totalShown={filtered.length} totalAll={allFields.length}
+        rightSlot={
+          <Button size="sm" onClick={() => setShowAdd(true)}>
+            <Plus className="h-4 w-4 mr-1.5" /> Add Block
+          </Button>
+        }
+      />
 
       {showAdd && (
-        <AddQuillFieldForm
+        <AddQuillBlockForm
           onClose={() => setShowAdd(false)}
           onSaved={() => { setShowAdd(false); qc.invalidateQueries({ queryKey: ["quill-fields"] }); }}
         />
       )}
 
-      {Object.entries(grouped).map(([cat, catFields]) => (
-        <div key={cat} className="rounded-xl border border-slate-200 overflow-hidden">
-          <button
-            onClick={() => toggleCat(cat)}
-            className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
-          >
-            {expandedCats.has(cat) ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
-            <span className="text-sm font-semibold text-slate-700">{cat}</span>
-            <span className="text-xs text-slate-400 ml-1">({catFields.length})</span>
-          </button>
-
-          {expandedCats.has(cat) && (
-            <div className="divide-y divide-slate-100">
-              {catFields.map((f) => (
-                editingId === f.id
-                  ? <EditQuillFieldRow key={f.id} field={f}
-                      onDone={() => { setEditingId(null); qc.invalidateQueries({ queryKey: ["quill-fields"] }); }} />
-                  : <QuillFieldRow key={f.id} field={f}
-                      onEdit={() => setEditingId(f.id)}
-                      onDelete={() => { if (confirm(`Remove "${f.label}"?`)) deleteMut.mutate(f.id); }} />
-              ))}
+      <div className="rounded-xl border border-slate-200 overflow-hidden">
+        <div className="grid grid-cols-[1fr_auto_auto_auto] text-xs font-semibold text-slate-400 uppercase tracking-wider px-4 py-2 bg-slate-50 border-b border-slate-200 gap-4">
+          <span>Block name</span>
+          <span>Category</span>
+          <span>Template syntax</span>
+          <span></span>
+        </div>
+        <div className="divide-y divide-slate-100 max-h-[60vh] overflow-y-auto">
+          {filtered.map((f) =>
+            editingId === f.id
+              ? <EditQuillBlockRow key={f.id} field={f}
+                  onDone={() => { setEditingId(null); qc.invalidateQueries({ queryKey: ["quill-fields"] }); }} />
+              : (
+                <div key={f.id} className={cn("grid grid-cols-[1fr_auto_auto_auto] items-center px-4 py-2.5 hover:bg-slate-50 gap-4 group",
+                  !f.active && "opacity-50")}>
+                  <div>
+                    <span className="text-sm text-slate-900">{f.label}</span>
+                    {f.description && <p className="text-xs text-slate-400 mt-0.5">{f.description}</p>}
+                  </div>
+                  <Badge variant="secondary" className="text-xs font-normal text-slate-500 shrink-0">{f.category}</Badge>
+                  <CopyPill syntax={f.template_syntax} />
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    <button onClick={() => setEditingId(f.id)} className="p-1.5 text-slate-400 hover:text-slate-700 rounded">
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button onClick={() => { if (confirm(`Remove "${f.label}"?`)) deleteMut.mutate(f.id); }}
+                      className="p-1.5 text-slate-400 hover:text-red-500 rounded">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )
+          )}
+          {filtered.length === 0 && allFields.length > 0 && (
+            <div className="px-4 py-8 text-sm text-slate-400 text-center">No blocks match your filter.</div>
+          )}
+          {allFields.length === 0 && (
+            <div className="px-4 py-12 text-sm text-slate-400 text-center">
+              No Quill blocks defined yet. Add one to get started.
             </div>
           )}
         </div>
-      ))}
+      </div>
+      <p className="text-xs text-slate-400">Quill blocks hold complex or conditional text filled in by the wizard — not available as plain Clio fields.</p>
     </div>
   );
 }
 
-function QuillFieldRow({ field, onEdit, onDelete }: { field: QuillFieldDef; onEdit: () => void; onDelete: () => void }) {
-  function copy() {
-    navigator.clipboard.writeText(field.template_syntax);
-    toast.success("Copied to clipboard", { description: field.template_syntax, duration: 1500 });
-  }
 
-  return (
-    <div className={cn("flex items-start gap-3 px-4 py-3 hover:bg-slate-50 group transition-colors",
-      !field.active && "opacity-50")}>
-      {/* Syntax pill — click to copy */}
-      <button onClick={copy}
-        className="shrink-0 flex items-center gap-1.5 font-mono text-xs bg-slate-900 text-white px-2.5 py-1 rounded-md hover:bg-slate-700 transition-colors mt-0.5"
-        title="Click to copy">
-        {field.template_syntax}
-        <Copy className="h-3 w-3 opacity-60" />
-      </button>
+// ─── Edit inline row ──────────────────────────────────────────────────────────
 
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-slate-900">{field.label}</span>
-          {!field.active && <Badge variant="secondary" className="text-xs">Inactive</Badge>}
-        </div>
-        {field.description && (
-          <p className="text-xs text-slate-400 mt-0.5">{field.description}</p>
-        )}
-        {field.applies_to && field.applies_to !== "all" && (
-          <p className="text-xs text-slate-300 mt-0.5">Used in: {field.applies_to}</p>
-        )}
-      </div>
-
-      {/* Example */}
-      {field.example && (
-        <span className="text-xs text-slate-400 italic shrink-0 max-w-32 truncate mt-0.5" title={field.example}>
-          e.g. {field.example}
-        </span>
-      )}
-
-      {/* Actions — visible on hover */}
-      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-        <button onClick={onEdit} className="p-1.5 text-slate-400 hover:text-slate-700 rounded">
-          <Pencil className="h-3.5 w-3.5" />
-        </button>
-        <button onClick={onDelete} className="p-1.5 text-slate-400 hover:text-red-500 rounded">
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function EditQuillFieldRow({ field, onDone }: { field: QuillFieldDef; onDone: () => void }) {
+function EditQuillBlockRow({ field, onDone }: { field: QuillFieldDef; onDone: () => void }) {
   const [label, setLabel] = useState(field.label);
   const [description, setDescription] = useState(field.description ?? "");
   const [example, setExample] = useState(field.example ?? "");
@@ -196,14 +428,14 @@ function EditQuillFieldRow({ field, onDone }: { field: QuillFieldDef; onDone: ()
     setSaving(true);
     try {
       await updateQuillField(field.id, { label, description: description || null, example: example || null, applies_to: appliesTo, category });
-      toast.success("Field updated");
+      toast.success("Block updated");
       onDone();
     } catch { toast.error("Failed to update"); }
     finally { setSaving(false); }
   }
 
   return (
-    <div className="px-4 py-3 bg-blue-50 border-l-2 border-blue-400 space-y-2">
+    <div className="px-4 py-3 bg-blue-50 border-l-2 border-blue-400 space-y-2 col-span-4">
       <div className="grid grid-cols-2 gap-2">
         <div>
           <Label className="text-xs mb-1 block">Label</Label>
@@ -213,21 +445,21 @@ function EditQuillFieldRow({ field, onDone }: { field: QuillFieldDef; onDone: ()
           <Label className="text-xs mb-1 block">Category</Label>
           <select value={category} onChange={(e) => setCategory(e.target.value)}
             className="h-7 w-full text-sm rounded-md border border-input bg-background px-2">
-            {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+            {QUILL_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
           </select>
         </div>
       </div>
       <div>
         <Label className="text-xs mb-1 block">Description</Label>
-        <Input value={description} onChange={(e) => setDescription(e.target.value)} className="h-7 text-sm" placeholder="What this field is used for..." />
+        <Input value={description} onChange={(e) => setDescription(e.target.value)} className="h-7 text-sm" />
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
           <Label className="text-xs mb-1 block">Example value</Label>
-          <Input value={example} onChange={(e) => setExample(e.target.value)} className="h-7 text-sm" placeholder="e.g. Jay Marcotte" />
+          <Input value={example} onChange={(e) => setExample(e.target.value)} className="h-7 text-sm" />
         </div>
         <div>
-          <Label className="text-xs mb-1 block">Applies to (wizard_keys, comma-separated, or "all")</Label>
+          <Label className="text-xs mb-1 block">Applies to (wizard_keys, comma-sep, or "all")</Label>
           <Input value={appliesTo} onChange={(e) => setAppliesTo(e.target.value)} className="h-7 text-sm font-mono" />
         </div>
       </div>
@@ -239,7 +471,10 @@ function EditQuillFieldRow({ field, onDone }: { field: QuillFieldDef; onDone: ()
   );
 }
 
-function AddQuillFieldForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+
+// ─── Add new block form ───────────────────────────────────────────────────────
+
+function AddQuillBlockForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [variable_name, setVariableName] = useState("");
   const [label, setLabel] = useState("");
   const [category, setCategory] = useState("General");
@@ -258,44 +493,40 @@ function AddQuillFieldForm({ onClose, onSaved }: { onClose: () => void; onSaved:
     setSaving(true);
     try {
       await createQuillField({ variable_name, label, category, description: description || undefined, example: example || undefined, applies_to });
-      toast.success(`Field "{{ ${variable_name} }}" added`);
+      toast.success(`Block "{{ ${variable_name} }}" added`);
       onSaved();
     } catch (e: any) {
-      toast.error(e?.response?.data?.detail ?? "Failed to add field");
+      toast.error(e?.response?.data?.detail ?? "Failed to add block");
     } finally { setSaving(false); }
   }
 
   return (
     <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
-      <p className="text-sm font-medium text-slate-900">Add New Quill Field</p>
+      <p className="text-sm font-medium text-slate-900">Add New Quill Block</p>
       <div className="grid grid-cols-2 gap-2">
         <div>
           <Label className="text-xs mb-1 block">Label</Label>
-          <Input value={label} onChange={(e) => handleLabelChange(e.target.value)} className="h-8 text-sm" autoFocus placeholder="e.g. HC Agent 3" />
+          <Input value={label} onChange={(e) => handleLabelChange(e.target.value)} className="h-8 text-sm" autoFocus placeholder="e.g. Pregnancy Clause" />
         </div>
         <div>
           <Label className="text-xs mb-1 block">Variable name (auto)</Label>
-          <Input value={variable_name} onChange={(e) => setVariableName(e.target.value)} className="h-8 text-sm font-mono" placeholder="e.g. hc_agent_3" />
+          <Input value={variable_name} onChange={(e) => setVariableName(e.target.value)} className="h-8 text-sm font-mono" placeholder="e.g. pregnancy_clause" />
         </div>
         <div>
           <Label className="text-xs mb-1 block">Category</Label>
           <select value={category} onChange={(e) => setCategory(e.target.value)}
             className="h-8 w-full text-sm rounded-md border border-input bg-background px-2">
-            {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+            {QUILL_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
           </select>
         </div>
         <div>
           <Label className="text-xs mb-1 block">Example value</Label>
-          <Input value={example} onChange={(e) => setExample(e.target.value)} className="h-8 text-sm" placeholder="e.g. Hillary Gagnon" />
+          <Input value={example} onChange={(e) => setExample(e.target.value)} className="h-8 text-sm" placeholder="e.g. In the event of pregnancy..." />
         </div>
       </div>
       <div>
         <Label className="text-xs mb-1 block">Description</Label>
-        <Input value={description} onChange={(e) => setDescription(e.target.value)} className="h-8 text-sm" placeholder="What this field is for..." />
-      </div>
-      <div>
-        <Label className="text-xs mb-1 block">Applies to (wizard_keys comma-separated, or "all")</Label>
-        <Input value={applies_to} onChange={(e) => setAppliesTo(e.target.value)} className="h-8 text-sm font-mono" />
+        <Input value={description} onChange={(e) => setDescription(e.target.value)} className="h-8 text-sm" placeholder="What this block is for..." />
       </div>
       <div className="flex gap-2">
         <Button size="sm" onClick={save} disabled={saving || !label || !variable_name}>
@@ -303,89 +534,6 @@ function AddQuillFieldForm({ onClose, onSaved }: { onClose: () => void; onSaved:
         </Button>
         <Button size="sm" variant="outline" onClick={onClose}>Cancel</Button>
       </div>
-    </div>
-  );
-}
-
-
-// --- Clio Fields Tab ---
-
-function ClioFieldsTab() {
-  const { data, isLoading } = useQuery({
-    queryKey: ["clio-fields"],
-    queryFn: () => listClioFields().then((r) => r.data.data),
-  });
-  const [filter, setFilter] = useState("");
-  const [sourceFilter, setSourceFilter] = useState<"all" | "contact" | "matter">("all");
-
-  function copy(syntax: string, name: string) {
-    navigator.clipboard.writeText(syntax);
-    toast.success("Copied to clipboard", { description: syntax, duration: 1500 });
-  }
-
-  if (isLoading) return <div className="text-slate-400 text-sm">Loading Clio fields...</div>;
-
-  const fields = (data ?? []).filter((f) => {
-    const matchSource = sourceFilter === "all" || f.source === sourceFilter;
-    const matchFilter = !filter || f.name.toLowerCase().includes(filter.toLowerCase()) || f.variable_name.includes(filter.toLowerCase());
-    return matchSource && matchFilter;
-  });
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <Input
-          placeholder="Search fields..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="h-8 text-sm max-w-64"
-        />
-        <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
-          {(["all", "contact", "matter"] as const).map((s) => (
-            <button key={s} onClick={() => setSourceFilter(s)}
-              className={cn("px-3 py-1 rounded-md text-xs font-medium transition-colors capitalize",
-                sourceFilter === s ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700")}>
-              {s === "all" ? `All (${data?.length ?? 0})` : `${s} (${data?.filter((f) => f.source === s).length ?? 0})`}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-slate-400 ml-auto">{fields.length} fields shown — read only</p>
-      </div>
-
-      <div className="rounded-xl border border-slate-200 overflow-hidden">
-        <div className="grid grid-cols-[1fr_auto_auto_auto] text-xs font-semibold text-slate-400 uppercase tracking-wider px-4 py-2 bg-slate-50 border-b border-slate-200 gap-4">
-          <span>Field name</span>
-          <span>Type</span>
-          <span>Source</span>
-          <span>Template syntax</span>
-        </div>
-        <div className="divide-y divide-slate-100 max-h-[60vh] overflow-y-auto">
-          {fields.map((f) => (
-            <div key={f.id} className="grid grid-cols-[1fr_auto_auto_auto] items-center px-4 py-2.5 hover:bg-slate-50 gap-4 group">
-              <span className="text-sm text-slate-900">{f.name}</span>
-              <span className="text-xs text-slate-400">{f.field_type}</span>
-              <Badge variant="secondary" className={cn("text-xs font-normal",
-                f.source === "contact" ? "bg-blue-50 text-blue-600" : "bg-purple-50 text-purple-600")}>
-                {f.source}
-              </Badge>
-              <button onClick={() => copy(f.template_syntax, f.name)}
-                className="flex items-center gap-1.5 font-mono text-xs bg-slate-800 text-white px-2.5 py-1 rounded-md hover:bg-slate-600 transition-colors"
-                title="Click to copy">
-                {f.template_syntax}
-                <Copy className="h-3 w-3 opacity-60" />
-              </button>
-            </div>
-          ))}
-          {fields.length === 0 && (
-            <div className="px-4 py-8 text-sm text-slate-400 text-center">No fields match your search.</div>
-          )}
-        </div>
-      </div>
-
-      <p className="text-xs text-slate-400">
-        Clio fields are pulled live from your connected account. Variable names are auto-generated from the field name.
-        These values are available for templates but must first be mapped in the backend field mapper.
-      </p>
     </div>
   );
 }
