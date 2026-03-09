@@ -106,7 +106,7 @@ Authorization: Bearer <jwt-token>
 
 The wizard is at `/wizard/[matterId]` and walks through:
 
-1. **Setup** — Estate structure (single/joint), pronouns (she/he), pregnancy clause Y/N (appears when female)
+1. **Setup** — Client 1 + Client 2 contact cards (search or create in Clio); pronouns (He/Him, She/Her, They/Them) auto-populated from Clio contact on selection; pregnancy clause shown inline when She/Her; estate structure (single/joint)
 2. **Documents** — Select which documents to generate (checkbox list from DB)
 3. **Trust** *(conditional — appears only if Trust is selected)* — Trust name
 4. **Living Will** *(conditional — appears only if Living Will is selected)* — Review only; uses Setup data
@@ -197,7 +197,7 @@ Returns HTTP 400 with a clear error if no template file exists on disk.
 | Clio ID | Name | Quill Variable / Purpose |
 |---|---|---|
 | 5315476 | Client 1 | Primary client contact |
-| 5315491 / 14358211 / 15903653 | Client 2 / Principal Client 2 | Second client (joint) |
+| "Principal Client 2" (field_name) | Client 2 / Principal Client 2 | value = Clio contact ID; fetched via getContact |
 | 14358376 | Trust Name | `trust_name` — auto-populate wizard |
 | 14358646 | he/she | `is_female` — auto-set pronoun from Clio |
 | 13844883 | Husband | `husband_name` |
@@ -448,17 +448,13 @@ The `upload_to_clio: true` flag exists in the generate API and the `_upload_to_c
 **Priority: Medium**
 The `matter_type` column exists on `DocumentType` but the wizard shows all document types regardless of the matter's practice area. Filter the Documents step to only show types matching the matter's practice area (estate_planning, probate, etc.).
 
-### 7. Clio Contact Auto-Populate in Wizard
-**Priority: Medium**
-The wizard has a ContactPanel for adding contacts to a matter, but does not yet use Clio custom field 5315476 (Client 1) or 15903638 (Principal Client 1) to auto-set `data.client`. When the matter loads, read these contact-type custom fields and pre-set the primary client automatically.
-
 ### 8. Joint Estate Support
 **Priority: Low — depends on Hillary's templates**
 The wizard has a `structure: "joint"` option and the DB supports `template_joint_*` variants, but no joint templates have been uploaded yet. Once Hillary provides joint/married versions of her templates, upload them via the document type manager and they'll resolve automatically.
 
-### 9. Pronoun Auto-Set from Clio
-**Priority: Low**
-Clio contact field 15902693 (`Pronoun` picklist) can be read to auto-set `is_female` in the wizard, saving one click. Map picklist value to boolean in the wizard's Clio auto-populate logic.
+### 9. Joint Estate Template Rollout
+**Priority: Medium**
+The wizard supports joint/married structure and the DB has `template_joint_*` slots, but no joint templates have been uploaded yet. Awaiting Hillary's joint document variants.
 
 ---
 

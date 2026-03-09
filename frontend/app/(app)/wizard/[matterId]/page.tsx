@@ -8,9 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, FileDown, Loader2, Check, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileDown, Loader2, Check, Search, X, Pencil, UserCircle, UserPlus } from "lucide-react";
 import { ContactPanel } from "@/components/wizard/contact-panel";
-import { searchContacts, type ContactCard } from "@/lib/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { searchContacts, getContact, type ContactCard } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 // Clio document checkbox field IDs → wizard_key mapping
@@ -39,8 +40,9 @@ type WizardData = {
   matter_type: string;
   structure: "single" | "joint";
   client: { id: number; name: string; first_name: string; last_name: string; prefix: string } | null;
-  client_2: { id: number; name: string } | null;
-  is_female: boolean;
+  client_2: { id: number; name: string; first_name: string; last_name: string; prefix: string } | null;
+  pronoun: "He" | "She" | "They";   // Clio picklist value — drives all pronoun template variables
+  is_female: boolean;                 // derived from pronoun; kept for legacy template compat
   include_pregnancy_clause: boolean;
   trust_name: string;
   trustee_1: string;
@@ -61,6 +63,10 @@ type WizardData = {
   other_account_name: string;
   selected_documents: string[];
   rate_key: string;
+  deposit: string;
+  pronoun_2: "He" | "She" | "They";
+  is_female_2: boolean;
+  include_pregnancy_clause_2: boolean;
 };
 
 const RATE_TYPES = [
@@ -114,6 +120,7 @@ export default function WizardPage() {
     structure: "single",
     client: null,
     client_2: null,
+    pronoun: "He",
     is_female: false,
     include_pregnancy_clause: false,
     trust_name: "",
@@ -135,6 +142,10 @@ export default function WizardPage() {
     other_account_name: "",
     selected_documents: [],
     rate_key: "",
+    deposit: "",
+    pronoun_2: "He",
+    is_female_2: false,
+    include_pregnancy_clause_2: false,
   });
   const [firmRates, setFirmRates] = useState<Record<string, string>>({});
   const [clioAutoFilled, setClioAutoFilled] = useState<string[]>([]);
@@ -161,27 +172,36 @@ export default function WizardPage() {
   useEffect(() => {
     if (!matter?.custom_field_values) return;
 
-    // Build a lookup: field definition ID → value
+    // Build lookup by custom_field.id for scalar fields
     const byFieldId: Record<number, unknown> = {};
     for (const cf of matter.custom_field_values) {
-      const defId = cf.custom_field?.id;
+      const cfAny = cf as any;
+      const defId = cfAny.custom_field?.id;
       if (defId !== undefined) byFieldId[defId] = cf.value;
     }
 
     const patch: Partial<WizardData> = {};
+    const filled: string[] = [];
+
+    // Clients are NOT auto-populated — user selects them manually via ClientCard search.
+    // Pronoun is fetched automatically when a client is selected (see ClientCard.select()).
 
     // Trust name (field 14358376)
-    if (byFieldId[14358376]) patch.trust_name = String(byFieldId[14358376]);
+    if (byFieldId[14358376]) { patch.trust_name = String(byFieldId[14358376]); filled.push("Trust Name"); }
 
     // Estate structure: "Joint" or "Single" (field 15902438)
     const structureVal = String(byFieldId[15902438] ?? "").toLowerCase();
-    if (structureVal === "joint") patch.structure = "joint";
-    else if (structureVal === "single") patch.structure = "single";
+    if (structureVal === "joint") { patch.structure = "joint"; filled.push("Estate Structure"); }
+    else if (structureVal === "single") { patch.structure = "single"; filled.push("Estate Structure"); }
 
-    // Pronoun / gender (field 14358646) — "She/Her" → is_female: true
-    const pronounVal = String(byFieldId[14358646] ?? "").toLowerCase();
-    if (pronounVal.includes("she")) { patch.is_female = true; }
-    else if (pronounVal.includes("he")) { patch.is_female = false; }
+    // Pronoun from matter-level field (14358646) — fallback if contact fetch hasn't resolved yet
+    const pronounRaw = String(byFieldId[14358646] ?? "").trim();
+    if (pronounRaw && !patch.client) {
+      const p = pronounRaw.toLowerCase();
+      if (p.startsWith("she"))       { patch.pronoun = "She"; patch.is_female = true; }
+      else if (p.startsWith("they")) { patch.pronoun = "They"; patch.is_female = false; }
+      else                           { patch.pronoun = "He";  patch.is_female = false; }
+    }
 
     // HC agent structure (field 14078733)
     const hcStructure = String(byFieldId[14078733] ?? "").toLowerCase();
@@ -189,6 +209,7 @@ export default function WizardPage() {
       if (hcStructure.includes("co")) patch.hc_agent_structure = "co_agents";
       else if (hcStructure.includes("successor") || hcStructure.includes("primary")) patch.hc_agent_structure = "primary_successor";
       else patch.hc_agent_structure = "single";
+      filled.push("HC Agent Structure");
     }
 
     // POA agents (fields 14759332, 14759377, 13845063, 13845093)
@@ -196,6 +217,7 @@ export default function WizardPage() {
     if (byFieldId[14759377]) patch.poa_agent_1b = String(byFieldId[14759377]);
     if (byFieldId[13845063]) patch.poa_agent_2  = String(byFieldId[13845063]);
     if (byFieldId[13845093]) patch.poa_agent_3  = String(byFieldId[13845093]);
+    if (patch.poa_agent_1a || patch.poa_agent_1b) filled.push("POA Agents");
     if (patch.poa_agent_1b)  patch.poa_has_co_agents = true;
 
     // Trustees (field 14759662 — comma-separated or single name)
@@ -203,6 +225,7 @@ export default function WizardPage() {
       const trustees = String(byFieldId[14759662]).split(/,\s*/);
       if (trustees[0]) patch.trustee_1 = trustees[0];
       if (trustees[1]) patch.trustee_2 = trustees[1];
+      filled.push("Trustees");
     }
 
     // Children (fields 14078358, 14078583) — will populate child_1/child_2 once trustees step is built
@@ -225,18 +248,10 @@ export default function WizardPage() {
     for (const [fieldId, wizKey] of Object.entries(docFieldMap)) {
       if (byFieldId[Number(fieldId)] === true) preSelected.push(wizKey);
     }
-    if (preSelected.length > 0) patch.selected_documents = preSelected;
+    if (preSelected.length > 0) { patch.selected_documents = preSelected; filled.push(`${preSelected.length} document${preSelected.length !== 1 ? "s" : ""} selected`); }
 
     if (Object.keys(patch).length > 0) {
       setData((prev) => ({ ...prev, ...patch }));
-      const filled: string[] = [];
-      if (patch.trust_name)          filled.push("Trust Name");
-      if (patch.structure)           filled.push("Estate Structure");
-      if (patch.is_female !== undefined) filled.push("Pronouns");
-      if (patch.hc_agent_structure)  filled.push("HC Agent Structure");
-      if (patch.poa_agent_1a)        filled.push("POA Agents");
-      if (patch.trustee_1)           filled.push("Trustees");
-      if (patch.selected_documents?.length) filled.push(`${patch.selected_documents.length} document${patch.selected_documents.length !== 1 ? "s" : ""} selected`);
       setClioAutoFilled(filled);
     }
   }, [matter]);
@@ -276,6 +291,7 @@ async function handleGenerate() {
         last_name: data.client.last_name,
         prefix: data.client.prefix,
       },
+      pronoun: data.pronoun,
       is_female: data.is_female,
       include_pregnancy_clause: data.include_pregnancy_clause,
       trust_name: data.trust_name,
@@ -302,6 +318,11 @@ async function handleGenerate() {
       rate_description: data.rate_key && firmRates
         ? (RATE_TYPES.find((r) => r.key === data.rate_key)?.description ?? "").replace("{amount}", firmRates[data.rate_key] ?? "")
         : "",
+      deposit: data.deposit,
+      client_2: data.client_2,
+      pronoun_2: data.pronoun_2,
+      is_female_2: data.is_female_2,
+      include_pregnancy_clause_2: data.include_pregnancy_clause_2,
     };
 
     const requests = data.selected_documents.map((wizard_key) => ({
@@ -531,48 +552,194 @@ function StepMatterType({ data, update, onNext }: { data: WizardData; update: Fu
 
 // --- Setup Step ---
 
-function PrimaryClientSearch({
+// ClientCard — contact card with inline pronoun + edit panel, consistent for Client 1 and Client 2.
+// On selection, fetches full contact to auto-set pronoun from Clio.
+// Supports create-new for contacts not yet in Clio (used for Client 2).
+function ClientCard({
   value,
-  onChange,
+  pronoun,
+  pregnancyClause,
+  onSelect,
+  onClear,
+  onPronounChange,
+  onPregnancyChange,
+  allowCreate = false,
 }: {
   value: WizardData["client"];
-  onChange: (c: WizardData["client"]) => void;
+  pronoun: "He" | "She" | "They";
+  pregnancyClause: boolean;
+  onSelect: (c: WizardData["client"], detectedPronoun?: "He" | "She" | "They") => void;
+  onClear: () => void;
+  onPronounChange: (p: "He" | "She" | "They") => void;
+  onPregnancyChange: (v: boolean) => void;
+  allowCreate?: boolean;
 }) {
+  const [editing, setEditing] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ContactCard[]>([]);
   const [searching, setSearching] = useState(false);
   const [open, setOpen] = useState(false);
-
+  const [creatingNew, setCreatingNew] = useState(false);
+  const [newContact, setNewContact] = useState({ first_name: "", last_name: "", phone: "", email: "" });
+  const [creating, setCreating] = useState(false);
   useEffect(() => {
-    if (query.length < 2) { setResults([]); return; }
-    const timeout = setTimeout(async () => {
+    if (query.length < 2) { setResults([]); setOpen(false); return; }
+    const t = setTimeout(async () => {
       setSearching(true);
       try {
         const r = await searchContacts(query);
         setResults(r.data);
+        setOpen(true);
       } catch { setResults([]); }
       finally { setSearching(false); }
     }, 300);
-    return () => clearTimeout(timeout);
+    return () => clearTimeout(t);
   }, [query]);
 
-  function select(c: ContactCard) {
-    onChange({ id: c.id, name: c.name, first_name: c.first_name, last_name: c.last_name, prefix: c.prefix });
+  async function select(c: ContactCard) {
     setQuery("");
     setResults([]);
     setOpen(false);
+    // Fetch full contact to read pronoun from Clio
+    let detectedPronoun: "He" | "She" | "They" | undefined;
+    try {
+      const full = await getContact(c.id);
+      const p = full.data.data.pronoun?.trim();
+      if (p) {
+        const pl = p.toLowerCase();
+        if (pl.startsWith("she")) detectedPronoun = "She";
+        else if (pl.startsWith("they")) detectedPronoun = "They";
+        else detectedPronoun = "He";
+      }
+    } catch { /* ignore — user can set manually */ }
+    onSelect({ id: c.id, name: c.name, first_name: c.first_name, last_name: c.last_name, prefix: c.prefix }, detectedPronoun);
   }
 
+  async function createAndSelect() {
+    setCreating(true);
+    try {
+      const res = await import("@/lib/api").then((m) => m.createContact(newContact));
+      const c = res.data.data;
+      onSelect({ id: c.id, name: c.name, first_name: c.first_name, last_name: c.last_name, prefix: c.prefix ?? "" });
+      setCreatingNew(false);
+      setNewContact({ first_name: "", last_name: "", phone: "", email: "" });
+    } catch {
+      const { toast } = await import("sonner");
+      toast.error("Failed to create contact in Clio");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  // Selected state — card with edit panel
   if (value) {
     return (
-      <div className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-900 bg-slate-50">
-        <div>
-          <p className="text-sm font-medium text-slate-900">{value.name}</p>
-          {value.prefix && <p className="text-xs text-slate-400">{value.prefix}</p>}
+      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+        {/* Summary row */}
+        <div className="flex items-center gap-3 px-3 py-2.5">
+          <UserCircle className="h-5 w-5 text-slate-300 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-slate-900 truncate">{value.name}</p>
+            {/* Pronoun pills inline under name */}
+            <div className="flex gap-1 mt-1.5">
+              {([
+                { label: "He/Him",    value: "He"   },
+                { label: "She/Her",   value: "She"  },
+                { label: "They/Them", value: "They" },
+              ] as const).map(({ label: pl, value: pv }) => (
+                <button
+                  key={pv}
+                  onClick={() => {
+                    onPronounChange(pv);
+                    if (pv !== "She") onPregnancyChange(false);
+                  }}
+                  className={cn(
+                    "px-2 py-0.5 rounded-full text-xs border transition-colors",
+                    pronoun === pv
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 text-slate-500 hover:border-slate-400"
+                  )}
+                >
+                  {pl}
+                </button>
+              ))}
+            </div>
+            {/* Pregnancy clause — shown only when She/Her */}
+            {pronoun === "She" && (
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-xs text-slate-500">Pregnancy clause in Living Will?</span>
+                {([true, false] as const).map((v) => (
+                  <button
+                    key={String(v)}
+                    onClick={() => onPregnancyChange(v)}
+                    className={cn(
+                      "px-2.5 py-0.5 rounded-full text-xs border transition-colors",
+                      pregnancyClause === v
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 text-slate-500 hover:border-slate-400"
+                    )}
+                  >
+                    {v ? "Yes" : "No"}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-1 shrink-0 self-start mt-1">
+            <button
+              onClick={() => setEditing((s) => !s)}
+              className="p-1.5 text-slate-400 hover:text-slate-600 rounded"
+              title="Edit contact"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={onClear}
+              className="p-1.5 text-slate-300 hover:text-red-500 rounded"
+              title="Remove"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
-        <button onClick={() => onChange(null)} className="text-slate-400 hover:text-slate-600 transition-colors">
-          <X className="h-4 w-4" />
-        </button>
+        {/* Inline edit panel */}
+        {editing && (
+          <ContactEditInline contactId={value.id} onClose={() => setEditing(false)} />
+        )}
+      </div>
+    );
+  }
+
+  // Search / create state
+  if (creatingNew) {
+    return (
+      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-3">
+        <p className="text-xs font-medium text-slate-700">Create new contact in Clio</p>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <Label className="text-xs mb-1 block">First Name</Label>
+            <Input value={newContact.first_name} onChange={(e) => setNewContact((p) => ({ ...p, first_name: e.target.value }))} className="h-8 text-sm" autoFocus />
+          </div>
+          <div>
+            <Label className="text-xs mb-1 block">Last Name</Label>
+            <Input value={newContact.last_name} onChange={(e) => setNewContact((p) => ({ ...p, last_name: e.target.value }))} className="h-8 text-sm" />
+          </div>
+          <div>
+            <Label className="text-xs mb-1 block">Phone</Label>
+            <Input value={newContact.phone} onChange={(e) => setNewContact((p) => ({ ...p, phone: e.target.value }))} className="h-8 text-sm" />
+          </div>
+          <div>
+            <Label className="text-xs mb-1 block">Email</Label>
+            <Input value={newContact.email} onChange={(e) => setNewContact((p) => ({ ...p, email: e.target.value }))} className="h-8 text-sm" type="email" />
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" disabled={!newContact.first_name || creating} onClick={createAndSelect}>
+            {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+            Create &amp; Select
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setCreatingNew(false)}>Cancel</Button>
+        </div>
       </div>
     );
   }
@@ -585,27 +752,148 @@ function PrimaryClientSearch({
           className="pl-9"
           placeholder="Search by name..."
           value={query}
-          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-          onFocus={() => setOpen(true)}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => results.length > 0 && setOpen(true)}
         />
         {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-slate-400" />}
       </div>
-      {open && results.length > 0 && (
+      {open && (results.length > 0 || (!searching && query.length >= 2)) && (
         <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
           {results.map((c) => (
             <button key={c.id} onClick={() => select(c)}
               className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0">
               <span className="font-medium text-slate-900">{c.name}</span>
-              {c.email && <span className="text-slate-400 ml-2">{c.email}</span>}
+              {c.email && <span className="text-slate-400 ml-2 text-xs">{c.email}</span>}
             </button>
           ))}
+          {results.length === 0 && !searching && (
+            <div className="px-4 py-3 text-sm text-slate-400">No contacts found.</div>
+          )}
+          {allowCreate && (
+            <button
+              onClick={() => { setOpen(false); setCreatingNew(true); }}
+              className="w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50 border-t border-slate-100 flex items-center gap-2"
+            >
+              <UserPlus className="h-4 w-4" />
+              Create new contact in Clio
+            </button>
+          )}
         </div>
       )}
-      {open && query.length >= 2 && !searching && results.length === 0 && (
-        <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow px-4 py-3 text-sm text-slate-400">
-          No contacts found.
+    </div>
+  );
+}
+
+
+// Thin wrapper around ContactEditPanel that imports ContactEditPanel logic inline
+// (reuses the same edit form that lives in contact-panel.tsx via a local copy)
+function ContactEditInline({ contactId, onClose }: { contactId: number; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    getContact(contactId).then((r) => {
+      const d = r.data.data;
+      setForm({
+        first_name: d.first_name ?? "",
+        last_name: d.last_name ?? "",
+        prefix: d.prefix ?? "",
+        email: d.email ?? "",
+        phone: d.phone ?? "",
+        street: d.street ?? "",
+        city: d.city ?? "",
+        province: d.province ?? "",
+        postal_code: d.postal_code ?? "",
+        middle_name: d.middle_name ?? "",
+        pronoun: d.pronoun ?? "",
+        special_notes: d.special_notes ?? "",
+      });
+      setLoaded(true);
+    }).catch((err) => { console.error("[Quill] ContactEditInline error:", err); setLoaded(true); });
+  }, [contactId]);
+
+  function set(key: string, value: string) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    setDirty(true);
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      await import("@/lib/api").then((m) => m.updateContact(contactId, form));
+      qc.invalidateQueries({ queryKey: ["contact-full", contactId] });
+      const { toast } = await import("sonner");
+      toast.success("Contact updated in Clio");
+      setDirty(false);
+    } catch {
+      const { toast } = await import("sonner");
+      toast.error("Failed to update contact");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!loaded) {
+    return (
+      <div className="border-t border-slate-100 px-3 py-3 flex items-center gap-2 text-sm text-slate-400">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-t border-slate-100 px-3 py-3 bg-slate-50">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-medium text-slate-600">Edit contact — saves directly to Clio</p>
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="h-4 w-4" /></button>
+      </div>
+      <div className="grid grid-cols-3 gap-2 mb-2">
+        <div><Label className="text-xs mb-1 block">Prefix</Label><Input value={form.prefix} onChange={(e) => set("prefix", e.target.value)} className="h-7 text-xs" placeholder="Mr./Ms." /></div>
+        <div><Label className="text-xs mb-1 block">First Name</Label><Input value={form.first_name} onChange={(e) => set("first_name", e.target.value)} className="h-7 text-xs" /></div>
+        <div><Label className="text-xs mb-1 block">Middle Name</Label><Input value={form.middle_name} onChange={(e) => set("middle_name", e.target.value)} className="h-7 text-xs" /></div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        <div><Label className="text-xs mb-1 block">Last Name</Label><Input value={form.last_name} onChange={(e) => set("last_name", e.target.value)} className="h-7 text-xs" /></div>
+        <div>
+          <Label className="text-xs mb-1 block">Pronoun</Label>
+          <div className="flex gap-1">
+            {["He", "She", "They"].map((p) => (
+              <button key={p} onClick={() => set("pronoun", p)}
+                className={cn("flex-1 h-7 text-xs rounded border transition-colors",
+                  form.pronoun === p ? "bg-slate-900 text-white border-slate-900" : "border-slate-200 text-slate-600 hover:border-slate-400")}>
+                {p}
+              </button>
+            ))}
+          </div>
         </div>
-      )}
+      </div>
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        <div><Label className="text-xs mb-1 block">Phone</Label><Input value={form.phone} onChange={(e) => set("phone", e.target.value)} className="h-7 text-xs" /></div>
+        <div><Label className="text-xs mb-1 block">Email</Label><Input value={form.email} onChange={(e) => set("email", e.target.value)} className="h-7 text-xs" type="email" /></div>
+      </div>
+      <div className="mb-2"><Label className="text-xs mb-1 block">Street Address</Label><Input value={form.street} onChange={(e) => set("street", e.target.value)} className="h-7 text-xs" /></div>
+      <div className="grid grid-cols-3 gap-2 mb-2">
+        <div className="col-span-1"><Label className="text-xs mb-1 block">City</Label><Input value={form.city} onChange={(e) => set("city", e.target.value)} className="h-7 text-xs" /></div>
+        <div><Label className="text-xs mb-1 block">State</Label><Input value={form.province} onChange={(e) => set("province", e.target.value)} className="h-7 text-xs" placeholder="AZ" /></div>
+        <div><Label className="text-xs mb-1 block">ZIP</Label><Input value={form.postal_code} onChange={(e) => set("postal_code", e.target.value)} className="h-7 text-xs" /></div>
+      </div>
+      <div className="mb-3">
+        <Label className="text-xs mb-1 block">Special Notes</Label>
+        <textarea value={form.special_notes} onChange={(e) => set("special_notes", e.target.value)} rows={2}
+          className="w-full text-xs rounded-md border border-input bg-background px-3 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+          placeholder="Notes visible in Clio..." />
+      </div>
+      <div className="flex items-center gap-2">
+        <Button size="sm" onClick={save} disabled={!dirty || saving}>
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+          Save to Clio
+        </Button>
+        <Button size="sm" variant="outline" onClick={onClose}>Close</Button>
+        {!dirty && <span className="text-xs text-slate-400">No changes</span>}
+      </div>
     </div>
   );
 }
@@ -615,15 +903,27 @@ function StepSetup({ data, update, matterId }: { data: WizardData; update: Funct
     <div className="space-y-6">
       <h2 className="text-lg font-medium text-slate-900">Estate Setup</h2>
 
-      {/* Primary Client */}
+      {/* Primary Client — card with inline pronoun + edit */}
       <div>
         <Label className="text-sm mb-1 block">Primary Client</Label>
         <p className="text-xs text-slate-400 mb-2">
           This person's name and address will appear on all generated documents.
         </p>
-        <PrimaryClientSearch
+        <ClientCard
           value={data.client}
-          onChange={(c) => update("client", c)}
+          pronoun={data.pronoun}
+          pregnancyClause={data.include_pregnancy_clause}
+          onSelect={(c, detectedPronoun) => {
+            update("client", c);
+            if (detectedPronoun) {
+              update("pronoun", detectedPronoun);
+              update("is_female", detectedPronoun === "She");
+              if (detectedPronoun !== "She") update("include_pregnancy_clause", false);
+            }
+          }}
+          onClear={() => update("client", null)}
+          onPronounChange={(p) => { update("pronoun", p); update("is_female", p === "She"); }}
+          onPregnancyChange={(v) => update("include_pregnancy_clause", v)}
         />
       </div>
 
@@ -641,39 +941,30 @@ function StepSetup({ data, update, matterId }: { data: WizardData; update: Funct
         </div>
       </div>
 
-      {/* Pronouns */}
-      <div>
-        <Label className="text-sm mb-2 block">Pronouns (Client 1)</Label>
-        <div className="flex gap-2">
-          {[{ label: "She/Her", value: "she" }, { label: "He/Him", value: "he" }].map(({ label, value }) => {
-            const isActive = (value === "she" && data.is_female) || (value === "he" && !data.is_female);
-            return (
-              <button key={label} onClick={() => {
-                update("is_female", value === "she");
-                if (value !== "she") update("include_pregnancy_clause", false);
-              }}
-                className={cn("px-4 py-1.5 rounded-full border text-sm transition-colors",
-                  isActive ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600 hover:border-slate-400")}>
-                {label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Pregnancy clause */}
-      {data.is_female && (
+      {/* Secondary Client (Joint only) — card with inline pronoun + edit + create-new */}
+      {data.structure === "joint" && (
         <div>
-          <Label className="text-sm mb-2 block">Include pregnancy clause in Living Will?</Label>
-          <div className="flex gap-2">
-            {([true, false] as const).map((val) => (
-              <button key={String(val)} onClick={() => update("include_pregnancy_clause", val)}
-                className={cn("px-5 py-1.5 rounded-full border text-sm transition-colors",
-                  data.include_pregnancy_clause === val ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600 hover:border-slate-400")}>
-                {val ? "Yes" : "No"}
-              </button>
-            ))}
-          </div>
+          <Label className="text-sm mb-1 block">Secondary Client (Client 2)</Label>
+          <p className="text-xs text-slate-400 mb-2">
+            The spouse or co-client. Their name will appear on joint documents.
+          </p>
+          <ClientCard
+            value={data.client_2}
+            pronoun={data.pronoun_2}
+            pregnancyClause={data.include_pregnancy_clause_2}
+            onSelect={(c, detectedPronoun) => {
+              update("client_2", c);
+              if (detectedPronoun) {
+                update("pronoun_2", detectedPronoun);
+                update("is_female_2", detectedPronoun === "She");
+                if (detectedPronoun !== "She") update("include_pregnancy_clause_2", false);
+              }
+            }}
+            onClear={() => update("client_2", null)}
+            onPronounChange={(p) => { update("pronoun_2", p); update("is_female_2", p === "She"); if (p !== "She") update("include_pregnancy_clause_2", false); }}
+            onPregnancyChange={(v) => update("include_pregnancy_clause_2", v)}
+            allowCreate
+          />
         </div>
       )}
 
@@ -784,13 +1075,15 @@ function StepLivingWill({ data }: { data: WizardData }) {
           <span className="font-medium capitalize">{data.structure}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-slate-500">Pronouns / gender</span>
-          <span className="font-medium">{data.is_female ? "She/Her (female)" : "He/Him (male)"}</span>
+          <span className="text-slate-500">Pronouns</span>
+          <span className="font-medium">
+            {data.pronoun === "He" ? "He/Him" : data.pronoun === "She" ? "She/Her" : "They/Them"}
+          </span>
         </div>
         <div className="flex justify-between">
           <span className="text-slate-500">Pregnancy clause</span>
           <Badge variant={data.include_pregnancy_clause ? "default" : "secondary"}>
-            {data.include_pregnancy_clause ? "Included" : data.is_female ? "Not included" : "Not applicable"}
+            {data.include_pregnancy_clause ? "Included" : data.pronoun === "She" ? "Not included" : "Not applicable"}
           </Badge>
         </div>
         <div className="flex justify-between">
@@ -848,10 +1141,22 @@ function StepReview({
                 : <ReviewRow label="Primary Client" value="Not selected" warn />
               }
               <ReviewRow label="Structure" value={data.structure === "single" ? "Single" : "Joint"} />
-              <ReviewRow label="Pronouns" value={data.is_female ? "She/Her" : "He/Him"} />
+              <ReviewRow label="Pronouns (Client 1)" value={data.pronoun === "He" ? "He/Him" : data.pronoun === "She" ? "She/Her" : "They/Them"} />
+              {data.structure === "joint" && (
+                <>
+                  {data.client_2
+                    ? <ReviewRow label="Client 2" value={data.client_2.name} />
+                    : <ReviewRow label="Client 2" value="Not selected" warn />
+                  }
+                  <ReviewRow label="Pronouns (Client 2)" value={data.pronoun_2 === "He" ? "He/Him" : data.pronoun_2 === "She" ? "She/Her" : "They/Them"} />
+                </>
+              )}
               {data.trust_name && <ReviewRow label="Trust Name" value={data.trust_name} />}
               {data.rate_key && (
                 <ReviewRow label="Fee Structure" value={rateLabel(data.rate_key)} />
+              )}
+              {data.rate_key === "hourly" && data.deposit && (
+                <ReviewRow label="Required Deposit" value={`$${data.deposit}`} />
               )}
             </ReviewSection>
 
@@ -947,6 +1252,29 @@ function StepEngagementLetter({
           <code className="bg-slate-100 px-1 rounded">{"{{ attorney_rate }}"}</code> ={" "}
           {firmRates[data.rate_key] || "—"}
         </p>
+      )}
+
+      {/* Deposit — shown only for Hourly */}
+      {data.rate_key === "hourly" && (
+        <div>
+          <Label className="text-sm mb-1 block">Required Deposit</Label>
+          <p className="text-xs text-slate-400 mb-2">
+            Initial retainer amount based on estimated effort and engagement risk.
+          </p>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+            <Input
+              className="pl-6"
+              placeholder="0.00"
+              value={data.deposit}
+              onChange={(e) => {
+                // Allow digits, commas, and one decimal point
+                const raw = e.target.value.replace(/[^0-9.,]/g, "");
+                update("deposit", raw);
+              }}
+            />
+          </div>
+        </div>
       )}
     </div>
   );

@@ -4,7 +4,7 @@
 > It is updated after every completed feature. The README.md is the technical reference.
 > Together they are the handoff document for any developer picking this up.
 
-**Last updated:** 2026-03-08
+**Last updated:** 2026-03-09
 **Current phase:** Phase 1 — Core Estate Planning MVP
 
 ---
@@ -77,7 +77,7 @@ Work through these in sequence. Check off each when complete and update README b
 - [x] `attorney_rate`, `rate_type`, `rate_description` template variables
 - [x] Clio auto-populate — reads `custom_field_values` by field definition ID; fills trust_name, structure, is_female, document checkboxes, HC structure, POA agents 1a/1b/2/3, trustees; green banner confirms what was pre-filled
 - [x] Matter-type-first wizard entry — Estate Planning / Probate / Guardianship / Trust Administration as step 0
-- [ ] Expanded pronoun model — She/Her, He/Him, They/Them, and how they affect template grammar
+- [x] Expanded pronoun model — She/Her, He/Him, They/Them; pronoun auto-populated from Clio contact on selection; pregnancy clause shown inline when She/Her selected
 - [x] Wizard: HC POA step — inputs for hc_agent_1, hc_agent_2, hc_agent_structure
 - [x] Wizard: General POA step — inputs for poa_agent_1a, poa_agent_1b, poa_andor, poa_agent_2, poa_agent_3
 - [x] Wizard: Closing Letter step — has_brokerage, has_llc, has_special_warranty_deed, other_account_name
@@ -119,7 +119,7 @@ Work through these in sequence. Check off each when complete and update README b
 | Trust name | Custom field 14358376 |
 | Estate structure (single/joint) | Custom field 15902438 |
 | Pronoun / he/she | Custom field 14358646 |
-| Client 2 / spouse | Custom fields 5315491, 14358211, 15903653 |
+| Client 2 / spouse contact ID | Custom field "Principal Client 2" (value = Clio contact ID) |
 | Document selection checkboxes | Custom fields 15903668–15903833 |
 | HC agent structure | Custom field 14078733 |
 | POA agents | Custom fields 14759332, 14759377, 13845063, 13845093 |

@@ -91,7 +91,7 @@ class ClioClient:
         return matters
 
     async def get_matter(self, matter_id: int) -> dict | None:
-        fields = "id,etag,display_number,description,status,client{id,name},custom_field_values{id,etag,field_name,value,custom_field{id}}"
+        fields = "id,etag,display_number,description,status,client{id,name,first_name,last_name,prefix},custom_field_values{id,etag,field_name,value}"
         data, status_code = await self.get(f"matters/{matter_id}", params={"fields": fields})
         if status_code == 200:
             return data.get("data")
@@ -153,24 +153,36 @@ class ClioClient:
 
     async def get_contact_full(self, contact_id: int) -> dict | None:
         """Get contact with all fields normalized for the edit popover."""
-        fields = "id,etag,name,first_name,last_name,prefix,email_addresses{address},phone_numbers{number},addresses{street,city,province,postal_code},custom_field_values{id,etag,field_name,value,picklist_option{id,option}}"
+        # Fetch core fields and custom fields in separate requests — Clio rejects picklist_option
+        # sub-field when combined with other nested fields in one request.
+        fields = "id,etag,name,first_name,last_name,prefix,email_addresses{address},phone_numbers{number},addresses{street,city,province,postal_code}"
         data, status_code = await self.get(f"contacts/{contact_id}", params={"fields": fields})
         if status_code != 200:
             return None
         c = data.get("data", {})
+
+        # Fetch custom field values separately (Clio rejects picklist_option nesting)
+        cf_data, cf_status = await self.get(
+            f"contacts/{contact_id}",
+            params={"fields": "custom_field_values{field_name,value}"},
+        )
+        cf_list = cf_data.get("data", {}).get("custom_field_values", []) if cf_status == 200 else []
+
         emails = [e["address"] for e in c.get("email_addresses", []) if e.get("address")]
         phones = [p["number"] for p in c.get("phone_numbers", []) if p.get("number")]
         addrs = c.get("addresses", [])
         addr = addrs[0] if addrs else {}
 
-        # Extract custom fields into a flat dict
+        # Picklist option ID → text for Pronoun field (IDs from Clio custom_fields/15902693)
+        PRONOUN_OPTIONS: dict[int, str] = {8980073: "He", 8980088: "She", 8980103: "They"}
+
+        # Extract custom fields; resolve Pronoun picklist ID to text
         custom: dict = {}
-        for cf in c.get("custom_field_values", []):
+        for cf in cf_list:
             name = cf.get("field_name", "")
             val = cf.get("value")
-            opt = cf.get("picklist_option")
-            if opt:
-                val = opt.get("option", val)
+            if name == "Pronoun" and isinstance(val, int):
+                val = PRONOUN_OPTIONS.get(val, val)
             custom[name] = val
 
         return {
