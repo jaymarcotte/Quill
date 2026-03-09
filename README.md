@@ -108,7 +108,7 @@ The wizard is at `/wizard/[matterId]` and walks through:
 
 1. **Setup** — Client 1 + Client 2 contact cards (search or create in Clio); pronouns (He/Him, She/Her, They/Them) auto-populated from Clio contact on selection; pregnancy clause shown inline when She/Her; estate structure (single/joint)
 2. **Documents** — Select which documents to generate (checkbox list from DB)
-3. **Trust** *(conditional — appears only if Trust is selected)* — Trust name
+3. **Trust** *(conditional — appears only if Trust is selected)* — Trust name; trustee_1 + trustee_2 (Clio contact pickers); dynamic children list (Clio contact pickers); beneficiaries (Clio contact pickers + free-text overflow); all selections auto-related to matter with role labels
 4. **Living Will** *(conditional — appears only if Living Will is selected)* — Review only; uses Setup data
 5. **Review** — Summary of all selections before generating
 6. **Generate** — Fires parallel `POST /api/documents/generate` for each selected document
@@ -421,7 +421,7 @@ All wizard steps for estate planning now have full input fields. These are compl
 
 - **HC POA step** — `hc_agent_1`, `hc_agent_2`, `hc_agent_structure`
 - **General POA step** — `poa_agent_1a`, `poa_agent_1b`, `poa_andor`, `poa_agent_2`, `poa_agent_3`, `poa_has_co_agents`
-- **Trust step** — `trust_name`, `trustee_1`, `trustee_2`, `trustee_structure`, `child_1/2/3`, `beneficiaries`; auto-populated from Clio fields 14078358/14078583
+- **Trust step** — `trust_name`, `trustee_1`, `trustee_2`, `trustee_structure` (Clio contact pickers); `children[]` dynamic list (Clio contact pickers); `beneficiary_contacts[]` + `beneficiaries` (contact pickers + free-text overflow); all contact selections auto-related to matter with role label
 - **Closing Letter step** — `has_brokerage`, `has_llc`, `has_special_warranty_deed`, `other_account_name`
 - **Engagement Letter step** — `attorney_rate`, `rate_type`, `rate_description`, `deposit`
 - **Contacts & Roles step** — shows all matter contacts; full per-document role linking in Phase 2

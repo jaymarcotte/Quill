@@ -4,7 +4,7 @@
 > It is updated after every completed feature. The README.md is the technical reference.
 > Together they are the handoff document for any developer picking this up.
 
-**Last updated:** 2026-03-09 (session 2)
+**Last updated:** 2026-03-09 (session 3)
 **Current phase:** Phase 1 — Core Estate Planning MVP
 
 ---
@@ -85,6 +85,7 @@ Work through these in sequence. Check off each when complete and update README b
 - [x] Wizard: Trust beneficiaries step — child_1/2/3 + beneficiaries merged into Trust step; auto-populated from Clio fields 14078358/14078583
 - [x] Contact-role assignment — Contacts & Roles step shows all matter contacts; full per-document role linking deferred to Phase 2
 - [x] Upload-to-Clio toggle in Review step — toggle wired to upload_to_clio in generate payload
+- [x] Trustees + children + beneficiaries use Clio contact pickers — search existing, create new, auto-relate to matter with role label; free-text "Other" overflow for beneficiaries; template variables unchanged (names extracted from contact objects)
 
 ### Phase 2
 
@@ -146,7 +147,7 @@ All variables available in every template. Full reference in README.md.
 |---|---|
 | Client | `client_name`, `client_first_name`, `client_last_name`, `client_prefix`, `client_email`, `client_address` |
 | Joint | `is_female`, `husband_name`, `wife_name` |
-| Trust | `trust_name`, `trustee_1`, `trustee_2`, `trustee_structure`, `child_1`, `child_2`, `child_3`, `beneficiaries` |
+| Trust | `trust_name`, `trustee_1`, `trustee_2`, `trustee_structure`, `children` (list), `beneficiaries` (comma-joined names + free-text) |
 | HC POA | `hc_agent_1`, `hc_agent_2`, `hc_agent_structure` |
 | General POA | `poa_agent_1a`, `poa_agent_1b`, `poa_andor`, `poa_agent_2`, `poa_agent_3` |
 | Living Will | `is_female`, `include_pregnancy_clause` |
