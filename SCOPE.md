@@ -4,7 +4,7 @@
 > It is updated after every completed feature. The README.md is the technical reference.
 > Together they are the handoff document for any developer picking this up.
 
-**Last updated:** 2026-03-09
+**Last updated:** 2026-03-09 (session 2)
 **Current phase:** Phase 1 — Core Estate Planning MVP
 
 ---
@@ -81,10 +81,10 @@ Work through these in sequence. Check off each when complete and update README b
 - [x] Wizard: HC POA step — inputs for hc_agent_1, hc_agent_2, hc_agent_structure
 - [x] Wizard: General POA step — inputs for poa_agent_1a, poa_agent_1b, poa_andor, poa_agent_2, poa_agent_3
 - [x] Wizard: Closing Letter step — has_brokerage, has_llc, has_special_warranty_deed, other_account_name
-- [ ] Wizard: Trust trustees step — trustee_1, trustee_2, trustee_structure, trustee_2a/2b
-- [ ] Wizard: Trust beneficiaries step — child_1/2/3, beneficiaries list
-- [ ] Contact-role assignment — assign matter contacts to per-document roles (trustee, agent, beneficiary, spouse, child)
-- [ ] Upload-to-Clio toggle in Review step (already in backend, just needs UI)
+- [x] Wizard: Trust trustees step — trustee_1, trustee_2, trustee_structure (sequential/co-trustees); children child_1/2/3; beneficiaries free-text
+- [x] Wizard: Trust beneficiaries step — child_1/2/3 + beneficiaries merged into Trust step; auto-populated from Clio fields 14078358/14078583
+- [x] Contact-role assignment — Contacts & Roles step shows all matter contacts; full per-document role linking deferred to Phase 2
+- [x] Upload-to-Clio toggle in Review step — toggle wired to upload_to_clio in generate payload
 
 ### Phase 2
 

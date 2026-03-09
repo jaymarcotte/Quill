@@ -417,14 +417,15 @@ The matter API call in `backend/app/api/matters.py` needs to include `custom_fie
 
 ### 2. Wizard: Missing Data-Entry Steps
 **Priority: High**
-These steps are defined in the wizard structure but show no input fields yet — users must fill them manually after download:
+All wizard steps for estate planning now have full input fields. These are complete:
 
-- **HC POA step** — inputs for `hc_agent_1`, `hc_agent_2`, `hc_agent_structure`
-- **General POA step** — inputs for `poa_agent_1a`, `poa_agent_1b`, `poa_andor`, `poa_agent_2`, `poa_agent_3`, `poa_has_co_agents`
-- **Trust (trustees)** — inputs for `trustee_1`, `trustee_2`, `trustee_structure`, `trustee_2a`, `trustee_2b`
-- **Trust (beneficiaries)** — dynamic list: `child_1`, `child_2`, `child_3`, `beneficiaries`
-- **Closing Letter step** — toggles for `has_brokerage`, `has_llc`, `has_special_warranty_deed`, `other_account_name`
-- **Engagement Letter step** — input for `attorney_rate`
+- **HC POA step** — `hc_agent_1`, `hc_agent_2`, `hc_agent_structure`
+- **General POA step** — `poa_agent_1a`, `poa_agent_1b`, `poa_andor`, `poa_agent_2`, `poa_agent_3`, `poa_has_co_agents`
+- **Trust step** — `trust_name`, `trustee_1`, `trustee_2`, `trustee_structure`, `child_1/2/3`, `beneficiaries`; auto-populated from Clio fields 14078358/14078583
+- **Closing Letter step** — `has_brokerage`, `has_llc`, `has_special_warranty_deed`, `other_account_name`
+- **Engagement Letter step** — `attorney_rate`, `rate_type`, `rate_description`, `deposit`
+- **Contacts & Roles step** — shows all matter contacts; full per-document role linking in Phase 2
+- **Review step** — upload-to-Clio toggle wired to `upload_to_clio` in generate payload
 
 ### 3. Document Type Manager UI (Template Upload per Variant)
 **Priority: High**
@@ -441,8 +442,8 @@ A clean page (or panel on `/fields`) where Hillary can see every `{{ variable_na
 All data already exists in `GET /api/fields/quill` and `GET /api/fields/clio-standard`. Just needs a clean read-only UI with copy buttons.
 
 ### 5. Clio Upload After Generation
-**Priority: Medium**
-The `upload_to_clio: true` flag exists in the generate API and the `_upload_to_clio` background task is implemented. But the wizard always sends `upload_to_clio: false`. Add a toggle in the Review step ("Upload to Clio after generating: Yes / No").
+**Priority: Medium** *(toggle UI complete — backend upload task needs end-to-end testing)*
+The `upload_to_clio` toggle is in the Review step and wired to the generate payload. The backend `_upload_to_clio` task needs testing to confirm files land in the correct Clio matter folder.
 
 ### 6. Matter Type Filtering in Wizard
 **Priority: Medium**

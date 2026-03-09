@@ -48,6 +48,11 @@ type WizardData = {
   trustee_1: string;
   trustee_2: string;
   trustee_structure: "sequential" | "co_trustees";
+  child_1: string;
+  child_2: string;
+  child_3: string;
+  beneficiaries: string;
+  upload_to_clio: boolean;
   hc_agent_1: string;
   hc_agent_2: string;
   hc_agent_structure: "single" | "co_agents" | "primary_successor";
@@ -92,6 +97,9 @@ const DOCUMENT_STEPS: [string, string][] = [
   ["Closing Letter",   "closing_letter"],
 ];
 
+// Steps that always appear after document steps (before Review)
+const ALWAYS_AFTER_DOCS = ["Contacts & Roles"];
+
 function getSteps(matterType: string, selectedDocs: string[]): string[] {
   if (matterType === "probate") {
     return ["Matter Type", "Probate Setup", "Review"];
@@ -107,6 +115,7 @@ function getSteps(matterType: string, selectedDocs: string[]): string[] {
   for (const [stepName, key] of DOCUMENT_STEPS) {
     if (selectedDocs.includes(key)) steps.push(stepName);
   }
+  for (const s of ALWAYS_AFTER_DOCS) steps.push(s);
   steps.push("Review");
   return steps;
 }
@@ -146,6 +155,11 @@ export default function WizardPage() {
     pronoun_2: "He",
     is_female_2: false,
     include_pregnancy_clause_2: false,
+    child_1: "",
+    child_2: "",
+    child_3: "",
+    beneficiaries: "",
+    upload_to_clio: false,
   });
   const [firmRates, setFirmRates] = useState<Record<string, string>>({});
   const [clioAutoFilled, setClioAutoFilled] = useState<string[]>([]);
@@ -228,7 +242,10 @@ export default function WizardPage() {
       filled.push("Trustees");
     }
 
-    // Children (fields 14078358, 14078583) — will populate child_1/child_2 once trustees step is built
+    // Children (fields 14078358, 14078583)
+    if (byFieldId[14078358]) { patch.child_1 = String(byFieldId[14078358]); }
+    if (byFieldId[14078583]) { patch.child_2 = String(byFieldId[14078583]); }
+    if (patch.child_1 || patch.child_2) filled.push("Children");
 
     // Document checkboxes (fields 15903668–15903833)
     const docFieldMap: Record<number, string> = {
@@ -323,6 +340,10 @@ async function handleGenerate() {
       pronoun_2: data.pronoun_2,
       is_female_2: data.is_female_2,
       include_pregnancy_clause_2: data.include_pregnancy_clause_2,
+      child_1: data.child_1,
+      child_2: data.child_2,
+      child_3: data.child_3,
+      beneficiaries: data.beneficiaries,
     };
 
     const requests = data.selected_documents.map((wizard_key) => ({
@@ -334,7 +355,7 @@ async function handleGenerate() {
         structure: data.structure,
         wizard_data: wizardPayload,
         generate_pdf: true,
-        upload_to_clio: false,
+        upload_to_clio: data.upload_to_clio,
       } as Parameters<typeof generateDocument>[0],
     }));
 
@@ -458,8 +479,11 @@ async function handleGenerate() {
         {currentStepName === "Closing Letter" && (
           <StepClosingLetter data={data} update={update} />
         )}
+        {currentStepName === "Contacts & Roles" && (
+          <StepContactRoles matterId={Number(matterId)} data={data} update={update} />
+        )}
         {currentStepName === "Review" && (
-          <StepReview data={data} matter={matter} docTypes={docTypes ?? []} onGenerate={handleGenerate} isGenerating={isGenerating} />
+          <StepReview data={data} matter={matter} docTypes={docTypes ?? []} onGenerate={handleGenerate} isGenerating={isGenerating} update={update} />
         )}
       </div>
 
@@ -1038,12 +1062,13 @@ function StepDocuments({
 
 function StepTrust({ data, update }: { data: WizardData; update: Function }) {
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div>
         <h2 className="text-lg font-medium text-slate-900 mb-1">Trust</h2>
-        <p className="text-sm text-slate-500">Enter trust details for this estate plan.</p>
+        <p className="text-sm text-slate-500">Enter trust details, trustees, and beneficiaries.</p>
       </div>
 
+      {/* Trust Name */}
       <div>
         <Label className="text-sm mb-2 block">Trust Name</Label>
         <Input
@@ -1051,7 +1076,128 @@ function StepTrust({ data, update }: { data: WizardData; update: Function }) {
           value={data.trust_name}
           onChange={(e) => update("trust_name", e.target.value)}
         />
-        <p className="text-xs text-slate-400 mt-1">This name will appear in the Trust, Certificate of Trust, and Pourover Will.</p>
+        <p className="text-xs text-slate-400 mt-1">Appears in the Trust, Certificate of Trust, and Pourover Will.</p>
+      </div>
+
+      {/* Trustee Structure */}
+      <div>
+        <Label className="text-sm mb-2 block">Trustee Structure</Label>
+        <div className="flex gap-2">
+          {[
+            { value: "sequential", label: "Sequential (Primary + Successor)" },
+            { value: "co_trustees", label: "Co-Trustees" },
+          ].map(({ value, label }) => (
+            <button key={value} onClick={() => update("trustee_structure", value)}
+              className={cn("flex-1 py-2 rounded-lg border text-sm transition-colors",
+                data.trustee_structure === value
+                  ? "border-slate-900 bg-slate-900 text-white"
+                  : "border-slate-200 text-slate-600 hover:border-slate-400")}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Trustee 1 */}
+      <div>
+        <Label className="text-sm mb-1.5 block">
+          {data.trustee_structure === "co_trustees" ? "Co-Trustee 1" : "Primary Trustee"}
+        </Label>
+        <Input placeholder="Full name" value={data.trustee_1}
+          onChange={(e) => update("trustee_1", e.target.value)} />
+      </div>
+
+      {/* Trustee 2 */}
+      <div>
+        <Label className="text-sm mb-1.5 block">
+          {data.trustee_structure === "co_trustees" ? "Co-Trustee 2" : "Successor Trustee"}
+        </Label>
+        <Input placeholder="Full name (optional)" value={data.trustee_2}
+          onChange={(e) => update("trustee_2", e.target.value)} />
+      </div>
+
+      {/* Children / Beneficiaries */}
+      <div className="border-t border-slate-100 pt-5 space-y-4">
+        <div>
+          <h3 className="text-sm font-medium text-slate-700 mb-3">Children</h3>
+          <div className="space-y-2">
+            {(["child_1", "child_2", "child_3"] as const).map((key, i) => (
+              <div key={key}>
+                <Label className="text-xs mb-1 block text-slate-500">Child {i + 1}</Label>
+                <Input placeholder="Full name (optional)" value={data[key]}
+                  onChange={(e) => update(key, e.target.value)} className="h-8 text-sm" />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <Label className="text-sm mb-1.5 block">Beneficiaries</Label>
+          <textarea
+            value={data.beneficiaries}
+            onChange={(e) => update("beneficiaries", e.target.value)}
+            rows={3}
+            placeholder="List any additional beneficiaries or notes (optional)"
+            className="w-full text-sm rounded-md border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <p className="text-xs text-slate-400 mt-1">Free-text — appears in templates that include a beneficiary schedule.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// --- Contacts & Roles Step ---
+
+function StepContactRoles({ matterId, data, update }: { matterId: number; data: WizardData; update: Function }) {
+  const ROLES = ["Trustee", "Successor Trustee", "HC Agent", "POA Agent", "Beneficiary", "Personal Representative", "Guardian", "Other"];
+  const { data: relationships, isLoading } = useQuery({
+    queryKey: ["matter-relationships", matterId],
+    queryFn: () => import("@/lib/api").then((m) => m.getMatterRelationships(matterId).then((r) => r.data.data)),
+  });
+
+  const contacts: { id: number; name: string; description: string }[] = relationships ?? [];
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-medium text-slate-900 mb-1">Contacts &amp; Roles</h2>
+        <p className="text-sm text-slate-500">
+          Review the contacts linked to this matter. Role assignments here are informational —
+          trustee and agent names entered in previous steps drive the document templates.
+        </p>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-slate-400 py-4">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading contacts...
+        </div>
+      ) : contacts.length === 0 ? (
+        <div className="text-sm text-slate-400 py-4 text-center">
+          No contacts linked to this matter yet. Add them in the Setup step.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {contacts.map((c) => (
+            <div key={c.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-slate-200 bg-white">
+              <UserCircle className="h-5 w-5 text-slate-300 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-900">{c.name}</p>
+                {c.description && (
+                  <p className="text-xs text-slate-400">{c.description}</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="border-t border-slate-100 pt-4">
+        <p className="text-xs text-slate-400">
+          Full contact-role assignment (linking contacts to specific document roles) is coming in Phase 2.
+          For now, enter names directly in the Trust, HC POA, and General POA steps.
+        </p>
       </div>
     </div>
   );
@@ -1103,13 +1249,14 @@ function StepLivingWill({ data }: { data: WizardData }) {
 // --- Review Step ---
 
 function StepReview({
-  data, matter, docTypes, onGenerate, isGenerating,
+  data, matter, docTypes, onGenerate, isGenerating, update,
 }: {
   data: WizardData;
   matter: any;
   docTypes: DocType[];
   onGenerate: () => void;
   isGenerating: boolean;
+  update: <K extends keyof WizardData>(key: K, value: WizardData[K]) => void;
 }) {
   return (
     <div>
@@ -1160,6 +1307,16 @@ function StepReview({
               )}
             </ReviewSection>
 
+            {(data.trustee_1 || data.trustee_2 || data.child_1 || data.child_2 || data.child_3) && (
+              <ReviewSection title="Trust">
+                {data.trustee_1 && <ReviewRow label={data.trustee_structure === "co_trustees" ? "Co-Trustee 1" : "Primary Trustee"} value={data.trustee_1} />}
+                {data.trustee_2 && <ReviewRow label={data.trustee_structure === "co_trustees" ? "Co-Trustee 2" : "Successor Trustee"} value={data.trustee_2} />}
+                {data.child_1 && <ReviewRow label="Child 1" value={data.child_1} />}
+                {data.child_2 && <ReviewRow label="Child 2" value={data.child_2} />}
+                {data.child_3 && <ReviewRow label="Child 3" value={data.child_3} />}
+              </ReviewSection>
+            )}
+
             <ReviewSection title="Selected Documents">
               {data.selected_documents.length === 0 ? (
                 <p className="text-sm text-red-400 italic px-4 py-3">No documents selected</p>
@@ -1170,14 +1327,30 @@ function StepReview({
                   return (
                     <div key={key} className="flex justify-between px-4 py-2.5 text-sm">
                       <span className="font-medium text-slate-900">{doc?.label ?? key}</span>
-                  {!hasTemplate && (
-                    <span className="text-xs text-orange-500">No template — will skip</span>
-                  )}
-                </div>
-              );
-            })
-                )}
-              </ReviewSection>
+                      {!hasTemplate && (
+                        <span className="text-xs text-orange-500">No template — will skip</span>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </ReviewSection>
+
+            {/* Upload to Clio toggle */}
+            <div className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-200 bg-white">
+              <div>
+                <p className="text-sm font-medium text-slate-900">Upload to Clio after generation</p>
+                <p className="text-xs text-slate-400 mt-0.5">Automatically attach generated files to this matter in Clio.</p>
+              </div>
+              <button
+                onClick={() => update("upload_to_clio", !data.upload_to_clio)}
+                className={cn("w-10 h-6 rounded-full transition-colors shrink-0",
+                  data.upload_to_clio ? "bg-slate-900" : "bg-slate-200")}
+              >
+                <span className={cn("block w-5 h-5 rounded-full bg-white shadow transition-transform mx-0.5",
+                  data.upload_to_clio ? "translate-x-4" : "translate-x-0")} />
+              </button>
+            </div>
           </>
         )}
       </div>
