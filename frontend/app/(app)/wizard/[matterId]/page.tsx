@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, FileDown, Loader2, Check, Search, X, Pencil, UserCircle, UserPlus } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileDown, Loader2, Check, Search, X, Pencil, UserCircle, UserPlus, Plus } from "lucide-react";
 import { ContactPanel } from "@/components/wizard/contact-panel";
 import { useQueryClient } from "@tanstack/react-query";
 import { searchContacts, getContact, type ContactCard } from "@/lib/api";
@@ -45,12 +45,10 @@ type WizardData = {
   is_female: boolean;                 // derived from pronoun; kept for legacy template compat
   include_pregnancy_clause: boolean;
   trust_name: string;
-  trustee_1: string;
-  trustee_2: string;
+  trustee_1: { id: number; name: string } | null;
+  trustee_2: { id: number; name: string } | null;
   trustee_structure: "sequential" | "co_trustees";
-  child_1: string;
-  child_2: string;
-  child_3: string;
+  children: { id: number; name: string }[];
   beneficiaries: string;
   upload_to_clio: boolean;
   hc_agent_1: string;
@@ -133,8 +131,8 @@ export default function WizardPage() {
     is_female: false,
     include_pregnancy_clause: false,
     trust_name: "",
-    trustee_1: "",
-    trustee_2: "",
+    trustee_1: null,
+    trustee_2: null,
     trustee_structure: "sequential",
     hc_agent_1: "",
     hc_agent_2: "",
@@ -155,9 +153,7 @@ export default function WizardPage() {
     pronoun_2: "He",
     is_female_2: false,
     include_pregnancy_clause_2: false,
-    child_1: "",
-    child_2: "",
-    child_3: "",
+    children: [],
     beneficiaries: "",
     upload_to_clio: false,
   });
@@ -234,18 +230,7 @@ export default function WizardPage() {
     if (patch.poa_agent_1a || patch.poa_agent_1b) filled.push("POA Agents");
     if (patch.poa_agent_1b)  patch.poa_has_co_agents = true;
 
-    // Trustees (field 14759662 — comma-separated or single name)
-    if (byFieldId[14759662]) {
-      const trustees = String(byFieldId[14759662]).split(/,\s*/);
-      if (trustees[0]) patch.trustee_1 = trustees[0];
-      if (trustees[1]) patch.trustee_2 = trustees[1];
-      filled.push("Trustees");
-    }
-
-    // Children (fields 14078358, 14078583)
-    if (byFieldId[14078358]) { patch.child_1 = String(byFieldId[14078358]); }
-    if (byFieldId[14078583]) { patch.child_2 = String(byFieldId[14078583]); }
-    if (patch.child_1 || patch.child_2) filled.push("Children");
+    // Trustees and children are now Clio contact pickers — not pre-populated from text fields.
 
     // Document checkboxes (fields 15903668–15903833)
     const docFieldMap: Record<number, string> = {
@@ -312,8 +297,8 @@ async function handleGenerate() {
       is_female: data.is_female,
       include_pregnancy_clause: data.include_pregnancy_clause,
       trust_name: data.trust_name,
-      trustee_1: data.trustee_1,
-      trustee_2: data.trustee_2,
+      trustee_1: data.trustee_1?.name ?? "",
+      trustee_2: data.trustee_2?.name ?? "",
       trustee_structure: data.trustee_structure,
       hc_agent_1: data.hc_agent_1,
       hc_agent_2: data.hc_agent_2,
@@ -340,9 +325,7 @@ async function handleGenerate() {
       pronoun_2: data.pronoun_2,
       is_female_2: data.is_female_2,
       include_pregnancy_clause_2: data.include_pregnancy_clause_2,
-      child_1: data.child_1,
-      child_2: data.child_2,
-      child_3: data.child_3,
+      children: data.children.map((c) => c.name),
       beneficiaries: data.beneficiaries,
     };
 
@@ -465,7 +448,7 @@ async function handleGenerate() {
           <StepEngagementLetter data={data} update={update} firmRates={firmRates} />
         )}
         {currentStepName === "Trust" && (
-          <StepTrust data={data} update={update} />
+          <StepTrust data={data} update={update} matterId={Number(matterId)} />
         )}
         {currentStepName === "Health Care POA" && (
           <StepHcPoa data={data} update={update} />
@@ -1058,9 +1041,155 @@ function StepDocuments({
 }
 
 
+// --- Role Contact Picker ---
+// Single-slot contact picker: search Clio, select or create new, relate to matter with a role label.
+
+type RoleContact = { id: number; name: string };
+
+function RoleContactPicker({
+  label,
+  value,
+  matterId,
+  roleLabel,
+  optional = false,
+  onChange,
+}: {
+  label: string;
+  value: RoleContact | null;
+  matterId: number;
+  roleLabel: string;
+  optional?: boolean;
+  onChange: (c: RoleContact | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<ContactCard[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [creatingNew, setCreatingNew] = useState(false);
+  const [newContact, setNewContact] = useState({ first_name: "", last_name: "", phone: "", email: "" });
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    if (query.length < 2) { setResults([]); setOpen(false); return; }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const r = await searchContacts(query);
+        setResults(r.data);
+        setOpen(true);
+      } catch { setResults([]); }
+      finally { setSearching(false); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  async function select(c: ContactCard) {
+    setQuery(""); setResults([]); setOpen(false);
+    onChange({ id: c.id, name: c.name });
+    // Relate to matter with role label (best-effort — don't block selection)
+    try {
+      const { addMatterRelationship } = await import("@/lib/api");
+      await addMatterRelationship(matterId, c.id, roleLabel);
+    } catch { /* ignore — already related or network error */ }
+  }
+
+  async function createAndSelect() {
+    setCreating(true);
+    try {
+      const { createContact, addMatterRelationship } = await import("@/lib/api");
+      const res = await createContact(newContact);
+      const c = res.data.data;
+      onChange({ id: c.id, name: c.name });
+      await addMatterRelationship(matterId, c.id, roleLabel).catch(() => {});
+      setCreatingNew(false);
+      setNewContact({ first_name: "", last_name: "", phone: "", email: "" });
+    } catch {
+      const { toast } = await import("sonner");
+      toast.error("Failed to create contact in Clio");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  if (value) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white">
+        <UserCircle className="h-4 w-4 text-slate-300 shrink-0" />
+        <span className="flex-1 text-sm font-medium text-slate-900">{value.name}</span>
+        <button onClick={() => onChange(null)} className="p-1 text-slate-300 hover:text-red-500 rounded" title="Remove">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  if (creatingNew) {
+    return (
+      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-3">
+        <p className="text-xs font-medium text-slate-700">Create new contact in Clio — {label}</p>
+        <div className="grid grid-cols-2 gap-2">
+          <div><Label className="text-xs mb-1 block">First Name</Label>
+            <Input value={newContact.first_name} onChange={(e) => setNewContact((p) => ({ ...p, first_name: e.target.value }))} className="h-8 text-sm" autoFocus /></div>
+          <div><Label className="text-xs mb-1 block">Last Name</Label>
+            <Input value={newContact.last_name} onChange={(e) => setNewContact((p) => ({ ...p, last_name: e.target.value }))} className="h-8 text-sm" /></div>
+          <div><Label className="text-xs mb-1 block">Phone</Label>
+            <Input value={newContact.phone} onChange={(e) => setNewContact((p) => ({ ...p, phone: e.target.value }))} className="h-8 text-sm" /></div>
+          <div><Label className="text-xs mb-1 block">Email</Label>
+            <Input value={newContact.email} onChange={(e) => setNewContact((p) => ({ ...p, email: e.target.value }))} className="h-8 text-sm" type="email" /></div>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" disabled={!newContact.first_name || creating} onClick={createAndSelect}>
+            {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+            Create &amp; Select
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setCreatingNew(false)}>Cancel</Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+        <Input
+          className="pl-9"
+          placeholder={optional ? "Search by name (optional)..." : "Search by name..."}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => results.length > 0 && setOpen(true)}
+        />
+        {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-slate-400" />}
+      </div>
+      {open && (results.length > 0 || (!searching && query.length >= 2)) && (
+        <div className="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+          {results.map((c) => (
+            <button key={c.id} onClick={() => select(c)}
+              className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0">
+              <span className="font-medium text-slate-900">{c.name}</span>
+              {c.email && <span className="text-slate-400 ml-2 text-xs">{c.email}</span>}
+            </button>
+          ))}
+          {results.length === 0 && !searching && (
+            <div className="px-4 py-2 text-sm text-slate-400">No contacts found.</div>
+          )}
+          <button
+            onClick={() => { setOpen(false); setCreatingNew(true); }}
+            className="w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50 border-t border-slate-100 flex items-center gap-2"
+          >
+            <UserPlus className="h-4 w-4" />
+            Create new contact in Clio
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 // --- Trust Step ---
 
-function StepTrust({ data, update }: { data: WizardData; update: Function }) {
+function StepTrust({ data, update, matterId }: { data: WizardData; update: Function; matterId: number }) {
   return (
     <div className="space-y-6">
       <div>
@@ -1103,45 +1232,95 @@ function StepTrust({ data, update }: { data: WizardData; update: Function }) {
         <Label className="text-sm mb-1.5 block">
           {data.trustee_structure === "co_trustees" ? "Co-Trustee 1" : "Primary Trustee"}
         </Label>
-        <Input placeholder="Full name" value={data.trustee_1}
-          onChange={(e) => update("trustee_1", e.target.value)} />
+        <RoleContactPicker
+          label={data.trustee_structure === "co_trustees" ? "Co-Trustee 1" : "Primary Trustee"}
+          value={data.trustee_1}
+          matterId={matterId}
+          roleLabel={data.trustee_structure === "co_trustees" ? "Co-Trustee" : "Primary Trustee"}
+          onChange={(c) => update("trustee_1", c)}
+        />
       </div>
 
       {/* Trustee 2 */}
       <div>
         <Label className="text-sm mb-1.5 block">
           {data.trustee_structure === "co_trustees" ? "Co-Trustee 2" : "Successor Trustee"}
+          <span className="text-slate-400 font-normal ml-1">(optional)</span>
         </Label>
-        <Input placeholder="Full name (optional)" value={data.trustee_2}
-          onChange={(e) => update("trustee_2", e.target.value)} />
+        <RoleContactPicker
+          label={data.trustee_structure === "co_trustees" ? "Co-Trustee 2" : "Successor Trustee"}
+          value={data.trustee_2}
+          matterId={matterId}
+          roleLabel={data.trustee_structure === "co_trustees" ? "Co-Trustee" : "Successor Trustee"}
+          optional
+          onChange={(c) => update("trustee_2", c)}
+        />
       </div>
 
-      {/* Children / Beneficiaries */}
-      <div className="border-t border-slate-100 pt-5 space-y-4">
-        <div>
-          <h3 className="text-sm font-medium text-slate-700 mb-3">Children</h3>
+      {/* Children — dynamic list with Clio contact pickers */}
+      <div className="border-t border-slate-100 pt-5">
+        <div className="flex items-center justify-between mb-3">
+          <Label className="text-sm">Children</Label>
+          <button
+            onClick={() => update("children", [...data.children, { id: -Date.now(), name: "" }])}
+            className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700"
+          >
+            <Plus className="h-4 w-4" /> Add child
+          </button>
+        </div>
+        {data.children.length === 0 ? (
+          <p className="text-sm text-slate-400 italic">No children added.</p>
+        ) : (
           <div className="space-y-2">
-            {(["child_1", "child_2", "child_3"] as const).map((key, i) => (
-              <div key={key}>
-                <Label className="text-xs mb-1 block text-slate-500">Child {i + 1}</Label>
-                <Input placeholder="Full name (optional)" value={data[key]}
-                  onChange={(e) => update(key, e.target.value)} className="h-8 text-sm" />
+            {data.children.map((child, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="flex-1">
+                  {child.id > 0 ? (
+                    // Already selected from Clio — show as a card
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white">
+                      <UserCircle className="h-4 w-4 text-slate-300 shrink-0" />
+                      <span className="flex-1 text-sm font-medium text-slate-900">{child.name}</span>
+                    </div>
+                  ) : (
+                    // Empty slot — show contact picker
+                    <RoleContactPicker
+                      label={`Child ${i + 1}`}
+                      value={null}
+                      matterId={matterId}
+                      roleLabel="Child"
+                      onChange={(c) => {
+                        if (!c) return;
+                        const updated = [...data.children];
+                        updated[i] = c;
+                        update("children", updated);
+                      }}
+                    />
+                  )}
+                </div>
+                <button
+                  onClick={() => update("children", data.children.filter((_, j) => j !== i))}
+                  className="p-1.5 text-slate-300 hover:text-red-500 rounded shrink-0"
+                  title="Remove"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
             ))}
           </div>
-        </div>
+        )}
+      </div>
 
-        <div>
-          <Label className="text-sm mb-1.5 block">Beneficiaries</Label>
-          <textarea
-            value={data.beneficiaries}
-            onChange={(e) => update("beneficiaries", e.target.value)}
-            rows={3}
-            placeholder="List any additional beneficiaries or notes (optional)"
-            className="w-full text-sm rounded-md border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-          <p className="text-xs text-slate-400 mt-1">Free-text — appears in templates that include a beneficiary schedule.</p>
-        </div>
+      {/* Beneficiaries */}
+      <div>
+        <Label className="text-sm mb-1.5 block">Beneficiaries</Label>
+        <textarea
+          value={data.beneficiaries}
+          onChange={(e) => update("beneficiaries", e.target.value)}
+          rows={3}
+          placeholder="List any additional beneficiaries or notes (optional)"
+          className="w-full text-sm rounded-md border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+        />
+        <p className="text-xs text-slate-400 mt-1">Free-text — appears in templates that include a beneficiary schedule.</p>
       </div>
     </div>
   );
@@ -1307,13 +1486,11 @@ function StepReview({
               )}
             </ReviewSection>
 
-            {(data.trustee_1 || data.trustee_2 || data.child_1 || data.child_2 || data.child_3) && (
+            {(data.trustee_1 || data.trustee_2 || data.children.length > 0) && (
               <ReviewSection title="Trust">
-                {data.trustee_1 && <ReviewRow label={data.trustee_structure === "co_trustees" ? "Co-Trustee 1" : "Primary Trustee"} value={data.trustee_1} />}
-                {data.trustee_2 && <ReviewRow label={data.trustee_structure === "co_trustees" ? "Co-Trustee 2" : "Successor Trustee"} value={data.trustee_2} />}
-                {data.child_1 && <ReviewRow label="Child 1" value={data.child_1} />}
-                {data.child_2 && <ReviewRow label="Child 2" value={data.child_2} />}
-                {data.child_3 && <ReviewRow label="Child 3" value={data.child_3} />}
+                {data.trustee_1 && <ReviewRow label={data.trustee_structure === "co_trustees" ? "Co-Trustee 1" : "Primary Trustee"} value={data.trustee_1.name} />}
+                {data.trustee_2 && <ReviewRow label={data.trustee_structure === "co_trustees" ? "Co-Trustee 2" : "Successor Trustee"} value={data.trustee_2.name} />}
+                {data.children.map((c, i) => <ReviewRow key={i} label={`Child ${i + 1}`} value={c.name} />)}
               </ReviewSection>
             )}
 
