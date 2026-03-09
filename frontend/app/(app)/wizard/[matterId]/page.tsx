@@ -49,6 +49,7 @@ type WizardData = {
   trustee_2: { id: number; name: string } | null;
   trustee_structure: "sequential" | "co_trustees";
   children: { id: number; name: string }[];
+  beneficiary_contacts: { id: number; name: string }[];
   beneficiaries: string;
   upload_to_clio: boolean;
   hc_agent_1: string;
@@ -154,6 +155,7 @@ export default function WizardPage() {
     is_female_2: false,
     include_pregnancy_clause_2: false,
     children: [],
+    beneficiary_contacts: [],
     beneficiaries: "",
     upload_to_clio: false,
   });
@@ -326,7 +328,11 @@ async function handleGenerate() {
       is_female_2: data.is_female_2,
       include_pregnancy_clause_2: data.include_pregnancy_clause_2,
       children: data.children.map((c) => c.name),
-      beneficiaries: data.beneficiaries,
+      beneficiary_contacts: data.beneficiary_contacts.map((c) => c.name),
+      beneficiaries: [
+        ...data.beneficiary_contacts.map((c) => c.name),
+        ...(data.beneficiaries ? [data.beneficiaries] : []),
+      ].join(", "),
     };
 
     const requests = data.selected_documents.map((wizard_key) => ({
@@ -1310,17 +1316,67 @@ function StepTrust({ data, update, matterId }: { data: WizardData; update: Funct
         )}
       </div>
 
-      {/* Beneficiaries */}
-      <div>
-        <Label className="text-sm mb-1.5 block">Beneficiaries</Label>
-        <textarea
-          value={data.beneficiaries}
-          onChange={(e) => update("beneficiaries", e.target.value)}
-          rows={3}
-          placeholder="List any additional beneficiaries or notes (optional)"
-          className="w-full text-sm rounded-md border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
-        />
-        <p className="text-xs text-slate-400 mt-1">Free-text — appears in templates that include a beneficiary schedule.</p>
+      {/* Beneficiaries — Clio contact pickers + optional free-text overflow */}
+      <div className="border-t border-slate-100 pt-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-sm">Beneficiaries</Label>
+          <button
+            onClick={() => update("beneficiary_contacts", [...data.beneficiary_contacts, { id: -Date.now(), name: "" }])}
+            className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700"
+          >
+            <Plus className="h-4 w-4" /> Add beneficiary
+          </button>
+        </div>
+
+        {data.beneficiary_contacts.length === 0 ? (
+          <p className="text-sm text-slate-400 italic">No beneficiaries added.</p>
+        ) : (
+          <div className="space-y-2">
+            {data.beneficiary_contacts.map((ben, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="flex-1">
+                  {ben.id > 0 ? (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white">
+                      <UserCircle className="h-4 w-4 text-slate-300 shrink-0" />
+                      <span className="flex-1 text-sm font-medium text-slate-900">{ben.name}</span>
+                    </div>
+                  ) : (
+                    <RoleContactPicker
+                      label={`Beneficiary ${i + 1}`}
+                      value={null}
+                      matterId={matterId}
+                      roleLabel="Beneficiary"
+                      onChange={(c) => {
+                        if (!c) return;
+                        const updated = [...data.beneficiary_contacts];
+                        updated[i] = c;
+                        update("beneficiary_contacts", updated);
+                      }}
+                    />
+                  )}
+                </div>
+                <button
+                  onClick={() => update("beneficiary_contacts", data.beneficiary_contacts.filter((_, j) => j !== i))}
+                  className="p-1.5 text-slate-300 hover:text-red-500 rounded shrink-0"
+                  title="Remove"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div>
+          <Label className="text-sm mb-1 block text-slate-500">Other beneficiaries <span className="font-normal text-slate-400">(free-text, optional)</span></Label>
+          <textarea
+            value={data.beneficiaries}
+            onChange={(e) => update("beneficiaries", e.target.value)}
+            rows={2}
+            placeholder="e.g. charitable remainder, contingent beneficiaries, special notes..."
+            className="w-full text-sm rounded-md border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
       </div>
     </div>
   );
@@ -1486,11 +1542,13 @@ function StepReview({
               )}
             </ReviewSection>
 
-            {(data.trustee_1 || data.trustee_2 || data.children.length > 0) && (
+            {(data.trustee_1 || data.trustee_2 || data.children.length > 0 || data.beneficiary_contacts.length > 0) && (
               <ReviewSection title="Trust">
                 {data.trustee_1 && <ReviewRow label={data.trustee_structure === "co_trustees" ? "Co-Trustee 1" : "Primary Trustee"} value={data.trustee_1.name} />}
                 {data.trustee_2 && <ReviewRow label={data.trustee_structure === "co_trustees" ? "Co-Trustee 2" : "Successor Trustee"} value={data.trustee_2.name} />}
-                {data.children.map((c, i) => <ReviewRow key={i} label={`Child ${i + 1}`} value={c.name} />)}
+                {data.children.map((c, i) => <ReviewRow key={`child-${i}`} label={`Child ${i + 1}`} value={c.name} />)}
+                {data.beneficiary_contacts.map((c, i) => <ReviewRow key={`ben-${i}`} label={`Beneficiary ${i + 1}`} value={c.name} />)}
+                {data.beneficiaries && <ReviewRow label="Other beneficiaries" value={data.beneficiaries} />}
               </ReviewSection>
             )}
 
